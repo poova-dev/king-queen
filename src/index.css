@@ -12,10 +12,16 @@
   --primary: #B89B5E;
   --primary-light: #D6C29A;
   --accent: #A65D67;
+  --secondary-accent: #A65D67;
+  --highlight-accent: #B89B5E;
   --accent-dark: #7F4650;
   --text: #F2F0EB;
   --text-muted: #9B9892;
   --border: #2C2C30;
+  --board-light: #27272C;
+  --board-dark: #18181B;
+  --board-border: #35353A;
+  --board-highlight: #B89B5E;
 }
 
 body {
@@ -25,6 +31,7 @@ body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.4s ease, color 0.4s ease;
 }
 
 @layer base {

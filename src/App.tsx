@@ -1,61 +1,91 @@
-import { useState, useEffect } from 'react';
-import { Screen, UserProfile, Theme, THEMES } from './types';
+import { useState } from 'react';
+import { Screen, UserProfile, GameRoom, getOppositeIdentity } from './types';
 import { SplashScreen } from './screens/SplashScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { EntryScreen } from './screens/EntryScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { ThemeSelectionScreen } from './screens/ThemeSelectionScreen';
 import { HomeDashboard } from './screens/HomeDashboard';
+import { ProfileScreen } from './screens/ProfileScreen';
 import { CreateRoomScreen } from './screens/CreateRoomScreen';
 import { JoinRoomScreen } from './screens/JoinRoomScreen';
 import { WaitingRoomScreen } from './screens/WaitingRoomScreen';
 import { GamePreviewScreen } from './screens/GamePreviewScreen';
+import { ChessGameScreen } from './screens/ChessGameScreen';
 import { ScreenTransition } from './components/UI';
 import { BottomNavigation } from './components/BottomNavigation';
+import { ThemeProvider } from './context/ThemeContext';
 
-export default function App() {
+function MainApp() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('SPLASH');
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [theme, setTheme] = useState<Theme>(THEMES[0]);
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'profile'>('home');
-  const [roomCode, setRoomCode] = useState<string | null>(null);
-
-  // Apply theme to document root
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty('--background', theme.background);
-    root.style.setProperty('--surface', theme.surface);
-    root.style.setProperty('--surface-light', theme.surfaceLight);
-    root.style.setProperty('--primary', theme.primary);
-    root.style.setProperty('--primary-light', theme.primaryLight);
-    root.style.setProperty('--accent', theme.accent);
-    root.style.setProperty('--accent-dark', theme.accentDark);
-    root.style.setProperty('--text', theme.text);
-    root.style.setProperty('--text-muted', theme.textMuted);
-    root.style.setProperty('--border', theme.border);
-  }, [theme]);
+  const [activeRoom, setActiveRoom] = useState<GameRoom | null>(null);
+  // Track previous screen to return gracefully from ThemeSelectionScreen
+  const [previousScreen, setPreviousScreen] = useState<Screen>('HOME');
 
   const handleProfileComplete = (profile: UserProfile) => {
     setUser(profile);
+    setPreviousScreen('PROFILE');
     setCurrentScreen('THEME_SELECTION');
   };
 
-  const handleThemeSelect = (selectedTheme: Theme) => {
-    setTheme(selectedTheme);
-    setCurrentScreen('HOME');
+  const handleThemeSelect = () => {
+    // If coming from initial onboarding flow (no profile viewed yet), go to HOME
+    if (previousScreen === 'PROFILE_SETUP') {
+      setActiveTab('home');
+      setCurrentScreen('HOME');
+    } else {
+      setCurrentScreen(previousScreen || 'HOME');
+    }
   };
 
-  const handleCreateRoom = (code: string) => {
-    setRoomCode(code);
+  const navigateToAppearance = (from: Screen = 'PROFILE') => {
+    setPreviousScreen(from);
+    setCurrentScreen('THEME_SELECTION');
+  };
+
+  const handleCreateRoom = (settings: { code: string; timer: string; truthOrDare: boolean }) => {
+    if (!user) return;
+    const creatorRole = user.identity;
+    const opponentRole = getOppositeIdentity(creatorRole);
+
+    const newRoom: GameRoom = {
+      code: settings.code,
+      creator: user,
+      creatorRole: creatorRole,
+      opponentRole: opponentRole, // Enforce Opposite Identity!
+      timer: settings.timer,
+      truthOrDare: settings.truthOrDare,
+      creatorChessSide: 'WHITE',
+      opponentChessSide: 'BLACK',
+    };
+
+    setActiveRoom(newRoom);
     setCurrentScreen('WAITING_ROOM');
   };
 
   const handleJoinRoom = (code: string) => {
-    setRoomCode(code);
+    if (!user) return;
+    // When joining, the other player is the room creator and you take the opposite role
+    const opponentRole = getOppositeIdentity(user.identity);
+
+    const joinedRoom: GameRoom = {
+      code,
+      creator: user,
+      creatorRole: user.identity,
+      opponentRole: opponentRole,
+      timer: 'No Timer',
+      truthOrDare: true,
+      creatorChessSide: 'WHITE',
+      opponentChessSide: 'BLACK',
+    };
+
+    setActiveRoom(joinedRoom);
     setCurrentScreen('WAITING_ROOM');
   };
 
-  const showNav = ['HOME'].includes(currentScreen);
+  const showNav = ['HOME', 'PROFILE'].includes(currentScreen);
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--text)] font-sans relative">
@@ -79,7 +109,8 @@ export default function App() {
       <ScreenTransition isActive={currentScreen === 'THEME_SELECTION'}>
         <ThemeSelectionScreen 
           onSelect={handleThemeSelect} 
-          currentTheme={theme} 
+          onBack={() => setCurrentScreen(previousScreen || 'HOME')}
+          isInitialSetup={previousScreen === 'PROFILE_SETUP'}
         />
       </ScreenTransition>
 
@@ -89,32 +120,58 @@ export default function App() {
             user={user} 
             onCreateRoom={() => setCurrentScreen('CREATE_ROOM')}
             onJoinRoom={() => setCurrentScreen('JOIN_ROOM')}
-            onSettings={() => setCurrentScreen('THEME_SELECTION')}
+            onSettings={() => navigateToAppearance('HOME')}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'PROFILE'}>
+        {user && (
+          <ProfileScreen
+            user={user}
+            onNavigateToAppearance={() => navigateToAppearance('PROFILE')}
+            onEditProfile={() => setCurrentScreen('PROFILE_SETUP')}
+            onBack={() => {
+              setActiveTab('home');
+              setCurrentScreen('HOME');
+            }}
           />
         )}
       </ScreenTransition>
 
       <ScreenTransition isActive={currentScreen === 'CREATE_ROOM'}>
-        <CreateRoomScreen 
-          onBack={() => setCurrentScreen('HOME')}
-          onCreated={handleCreateRoom}
-        />
+        {user && (
+          <CreateRoomScreen 
+            user={user}
+            onBack={() => setCurrentScreen('HOME')}
+            onCreated={handleCreateRoom}
+          />
+        )}
       </ScreenTransition>
 
       <ScreenTransition isActive={currentScreen === 'JOIN_ROOM'}>
-        <JoinRoomScreen 
-          onBack={() => setCurrentScreen('HOME')}
-          onJoin={handleJoinRoom}
-        />
+        {user && (
+          <JoinRoomScreen 
+            user={user}
+            onBack={() => setCurrentScreen('HOME')}
+            onJoin={handleJoinRoom}
+          />
+        )}
       </ScreenTransition>
 
       <ScreenTransition isActive={currentScreen === 'WAITING_ROOM'}>
-        {user && roomCode && (
+        {user && activeRoom && (
           <WaitingRoomScreen 
             user={user}
-            code={roomCode}
-            onCancel={() => setCurrentScreen('HOME')}
-            onStart={() => setCurrentScreen('GAME_PREVIEW')}
+            room={activeRoom}
+            onCancel={() => {
+              setActiveRoom(null);
+              setCurrentScreen('HOME');
+            }}
+            onStart={(updatedRoom) => {
+              setActiveRoom(updatedRoom);
+              setCurrentScreen('CHESS_GAME');
+            }}
           />
         )}
       </ScreenTransition>
@@ -123,7 +180,25 @@ export default function App() {
         {user && (
           <GamePreviewScreen 
             user={user}
-            onExit={() => setCurrentScreen('HOME')}
+            room={activeRoom}
+            onEnterGame={() => setCurrentScreen('CHESS_GAME')}
+            onExit={() => {
+              setActiveRoom(null);
+              setCurrentScreen('HOME');
+            }}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'CHESS_GAME'}>
+        {user && (
+          <ChessGameScreen 
+            user={user}
+            room={activeRoom}
+            onExit={() => {
+              setActiveRoom(null);
+              setCurrentScreen('HOME');
+            }}
           />
         )}
       </ScreenTransition>
@@ -133,10 +208,22 @@ export default function App() {
           activeTab={activeTab} 
           onTabChange={(tab) => {
             setActiveTab(tab);
-            if (tab === 'profile') setCurrentScreen('PROFILE_SETUP');
+            if (tab === 'profile') {
+              setCurrentScreen('PROFILE');
+            } else if (tab === 'home') {
+              setCurrentScreen('HOME');
+            }
           }} 
         />
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <MainApp />
+    </ThemeProvider>
   );
 }
