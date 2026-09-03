@@ -1,0 +1,6 @@
+{
+  "name": "KING & QUEEN",
+  "description": "A private social chess experience designed for connection, competition, and post-game challenges.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
