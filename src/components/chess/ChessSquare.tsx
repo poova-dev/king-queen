@@ -74,17 +74,16 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
         />
       )}
 
-      {/* Selected square highlight */}
+      {/* Selected square highlight (Subtle accent border & background, Quiet Luxury) */}
       {isSelected && (
-        <motion.div 
-          layoutId="selected-square-highlight"
-          className="absolute inset-0 z-10 border-2"
+        <div 
+          className="absolute inset-0 z-10 border-2 pointer-events-none transition-all duration-200"
           style={{
             borderColor: 'var(--primary, #B89B5E)',
             backgroundColor: 'var(--primary, #B89B5E)',
-            opacity: 0.35,
+            opacity: 0.32,
+            boxShadow: 'inset 0 0 8px rgba(184, 155, 94, 0.25)',
           }}
-          transition={{ duration: 0.2 }}
         />
       )}
 
@@ -112,15 +111,11 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
 
       {/* Render Piece */}
       {piece && (
-        <motion.div
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.96 }}
-          className={`relative z-20 w-[82%] h-[82%] flex items-center justify-center filter drop-shadow-md ${
-            isSelected ? 'scale-105' : ''
-          }`}
+        <div
+          className="relative z-20 w-[82%] h-[82%] flex items-center justify-center filter drop-shadow-md transition-transform active:scale-95"
         >
           <ChessPiece type={piece.type} color={piece.color} />
-        </motion.div>
+        </div>
       )}
 
       {/* Board coordinate labels (Quiet luxury, minimal) */}

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Heart } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Heart, RotateCcw } from 'lucide-react';
 import { GameRoom, UserProfile, getOppositeIdentity, ChessSide } from '../types';
 import { GameHeader } from '../components/chess/GameHeader';
 import { PlayerCard } from '../components/chess/PlayerCard';
@@ -14,6 +14,7 @@ import { GameStatusBanner } from '../components/chess/GameStatusBanner';
 import { PromotionModal } from '../components/chess/PromotionModal';
 import { GameOverModal } from '../components/chess/GameOverModal';
 import { useChessGame } from '../hooks/useChessGame';
+import { useRematch } from '../hooks/useRematch';
 
 interface ChessGameScreenProps {
   user: UserProfile;
@@ -26,7 +27,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   room,
   onExit,
 }) => {
-  // Player identities (King vs Queen)
+  // Player identities (King vs Queen - NEVER changes on rematch)
   const userRole = room ? room.creatorRole : user.identity;
   const opponentRole = room ? room.opponentRole : getOppositeIdentity(user.identity);
 
@@ -39,10 +40,15 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   };
 
   // Chess piece sides (separate from royal character)
-  // For this local phase, user plays White, opponent plays Black
-  const userSide: ChessSide = room?.creatorChessSide || 'WHITE';
-  const opponentSide: ChessSide = room?.opponentChessSide || 'BLACK';
-  const playerColor: 'w' | 'b' = userSide === 'WHITE' ? 'w' : 'b';
+  // OPTION A: Swap colors on rematch (Game 1: White ↔ Game 2: Black)
+  const [currentUserSide, setCurrentUserSide] = useState<ChessSide>(
+    () => room?.creatorChessSide || 'WHITE'
+  );
+  const [currentOpponentSide, setCurrentOpponentSide] = useState<ChessSide>(
+    () => room?.opponentChessSide || 'BLACK'
+  );
+
+  const playerColor: 'w' | 'b' = currentUserSide === 'WHITE' ? 'w' : 'b';
 
   // Centralized Chess Game Engine state
   const {
@@ -77,6 +83,29 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const [resignedBy, setResignedBy] = useState<'YOU' | 'OPPONENT' | null>(null);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
+  // REMATCH SYSTEM & 2-PLAYER CONFIRMATION
+  const handleRematchSuccess = useCallback(() => {
+    // 1. Swap Chess Sides on Rematch (KING/QUEEN profile identities remain unchanged)
+    setCurrentUserSide((prev) => (prev === 'WHITE' ? 'BLACK' : 'WHITE'));
+    setCurrentOpponentSide((prev) => (prev === 'WHITE' ? 'BLACK' : 'WHITE'));
+
+    // 2. Complete State Reset across all game parameters
+    setResignedBy(null);
+    setIsGameOverDismissed(false);
+    resetGame();
+  }, [resetGame]);
+
+  const {
+    rematchState,
+    isResetting,
+    confirmRematch,
+    declineRematch,
+    resetRematchState,
+  } = useRematch({
+    onRematchSuccess: handleRematchSuccess,
+    transitionDurationMs: 850,
+  });
+
   // Send Floating Reactions
   const handleSendReaction = (emoji: string) => {
     const newReaction: FloatingReaction = {
@@ -94,7 +123,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const isUserTurn = turn === playerColor && !isGameOver && !resignedBy;
   const isOpponentTurn = turn !== playerColor && !isGameOver && !resignedBy;
 
-  // Handlers for game ending options
+  // Handlers for match actions
   const handleOfferDraw = () => {
     // In local 2-player mode, draw offer accepts and concludes match as Draw
   };
@@ -104,10 +133,23 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     setIsGameOverDismissed(false);
   };
 
-  const handlePlayAgain = () => {
-    setResignedBy(null);
-    setIsGameOverDismissed(false);
-    resetGame();
+  // Rematch actions
+  const handlePlayAgainUser = () => {
+    confirmRematch('playerOne');
+  };
+
+  const handlePlayAgainOpponent = () => {
+    confirmRematch('playerTwo');
+  };
+
+  const handleDeclineOpponent = () => {
+    declineRematch('playerTwo');
+  };
+
+  const handleExitGame = () => {
+    declineRematch('playerOne');
+    resetRematchState();
+    onExit();
   };
 
   // Determine game over winner
@@ -138,7 +180,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
 
       {/* TOP GAME BAR */}
       <GameHeader
-        onBack={onExit}
+        onBack={handleExitGame}
         onOpenMenu={() => setIsOptionsOpen(true)}
         roomCode={room?.code || 'KQ-8472'}
         connectionStatus="connected"
@@ -152,7 +194,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             displayName={opponent.displayName}
             username={opponent.username}
             identity={opponentRole}
-            chessSide={opponentSide}
+            chessSide={currentOpponentSide}
             wins={12}
             avatar={opponent.avatar}
             isTurn={isOpponentTurn}
@@ -160,10 +202,10 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             timeRemaining="09:42"
           />
 
-          {/* Captured Pieces by Opponent (White pieces captured by Black) */}
+          {/* Captured Pieces by Opponent */}
           <div className="flex items-center justify-between px-1 text-xs">
             <CapturedPieces
-              pieces={userSide === 'WHITE' ? capturedByBlack : capturedByWhite}
+              pieces={currentUserSide === 'WHITE' ? capturedByBlack : capturedByWhite}
               label="Opponent Took"
               alignment="left"
             />
@@ -178,9 +220,22 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         </div>
 
         {/* CHECK BANNER */}
-        {isCheck && !isGameOver && (
+        {isCheck && !isGameOver && !resignedBy && (
           <GameStatusBanner status="CHECK" />
         )}
+
+        {/* CURRENT TURN STATUS */}
+        <div className="w-full flex items-center justify-center py-1">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] shadow-sm">
+            <span
+              className="w-2.5 h-2.5 rounded-full border border-white/20 shadow-sm"
+              style={{ backgroundColor: turn === 'w' ? '#F8F8F6' : '#1A1A1D' }}
+            />
+            <span className="text-xs font-semibold tracking-wider text-[var(--text)] uppercase">
+              {turn === 'w' ? 'White to move' : 'Black to move'}
+            </span>
+          </div>
+        </div>
 
         {/* CHESS BOARD CENTERPIECE */}
         <div className="w-full flex items-center justify-center my-auto">
@@ -190,7 +245,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             legalMoves={legalMoves}
             lastMove={lastMove}
             checkSquare={checkSquare}
-            isFlipped={userSide === 'BLACK'}
+            isFlipped={currentUserSide === 'BLACK'}
             disabled={isGameOver || resignedBy !== null}
             onSquareClick={handleSquareClick}
           />
@@ -198,10 +253,10 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
 
         {/* PLAYER SECTION */}
         <div className="flex flex-col gap-1.5 w-full">
-          {/* Captured Pieces by You (Black pieces captured by White) */}
+          {/* Captured Pieces by You */}
           <div className="flex items-center justify-between px-1 text-xs">
             <CapturedPieces
-              pieces={userSide === 'WHITE' ? capturedByWhite : capturedByBlack}
+              pieces={currentUserSide === 'WHITE' ? capturedByWhite : capturedByBlack}
               label="You Took"
               alignment="left"
             />
@@ -214,7 +269,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             displayName={user.displayName}
             username={user.username}
             identity={userRole}
-            chessSide={userSide}
+            chessSide={currentUserSide}
             wins={18}
             avatar={user.avatar}
             isTurn={isUserTurn}
@@ -237,12 +292,21 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
           <span>
             Moves Played: <strong className="text-[var(--text)]">{moveHistory.length}</strong>
           </span>
-          <button
-            onClick={handlePlayAgain}
-            className="text-[var(--primary)] hover:underline font-semibold tracking-wider uppercase text-[10px]"
-          >
-            Reset Board
-          </button>
+          {(isGameOver || resignedBy !== null) ? (
+            <button
+              onClick={() => setIsGameOverDismissed(false)}
+              className="text-[var(--primary)] hover:underline font-semibold tracking-wider uppercase text-[10px] flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" /> Rematch Menu
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsOptionsOpen(true)}
+              className="text-[var(--text-muted)] hover:text-[var(--text)] font-medium tracking-wider uppercase text-[10px]"
+            >
+              Game Options
+            </button>
+          )}
         </div>
       </main>
 
@@ -259,7 +323,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         onClose={() => setIsOptionsOpen(false)}
         onOfferDraw={handleOfferDraw}
         onResign={handleResign}
-        onExitGame={onExit}
+        onExitGame={handleExitGame}
       />
 
       {/* REACTION PICKER POPUP */}
@@ -276,7 +340,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         onSelect={completePromotion}
       />
 
-      {/* RESULT / GAME OVER MODAL */}
+      {/* RESULT / GAME OVER MODAL WITH 2-PLAYER REMATCH SYSTEM */}
       <GameOverModal
         isOpen={showGameOverModal}
         resultType={gameOverResultType}
@@ -285,9 +349,15 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         winnerName={winnerProfile?.displayName}
         winnerAvatar={winnerProfile?.avatar}
         totalMoves={moveHistory.length}
-        onPlayAgain={handlePlayAgain}
+        userProfile={user}
+        opponentProfile={opponent}
+        rematchState={rematchState}
+        isResetting={isResetting}
+        onPlayAgain={handlePlayAgainUser}
+        onSimulateOpponentPlayAgain={handlePlayAgainOpponent}
+        onSimulateOpponentDecline={handleDeclineOpponent}
         onViewGame={() => setIsGameOverDismissed(true)}
-        onExit={onExit}
+        onExit={handleExitGame}
       />
     </div>
   );

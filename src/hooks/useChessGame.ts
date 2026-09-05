@@ -170,61 +170,57 @@ export const useChessGame = (playerColor: 'w' | 'b' = 'w') => {
     [chess, updateMoveHistory]
   );
 
-  // Handle square click from custom ChessBoard UI
+  // Handle square clicks: selection, legal move indicators, movement, and promotions
   const handleSquareClick = useCallback(
     (square: SquareData) => {
-      if (chess.isGameOver()) return;
-
       const sqNotation = square.notation as Square;
 
-      // 1. If a square is already selected, check if clicked square is a legal destination
+      // 1. If a piece is already selected, check if clicked square is a legal destination
       if (selectedSquare) {
-        // If clicking the same square, deselect
+        // If clicking the currently selected square, deselect it
         if (selectedSquare === sqNotation) {
           setSelectedSquare(null);
           setLegalMoves([]);
           return;
         }
 
-        // Check if moving to this square requires pawn promotion
-        const piece = chess.get(selectedSquare);
-        const isPawnPromotion =
-          piece &&
-          piece.type === 'p' &&
-          ((piece.color === 'w' && sqNotation.endsWith('8')) ||
-            (piece.color === 'b' && sqNotation.endsWith('1')));
+        // Check if moving to this square is legal
+        const moves = chess.moves({ square: selectedSquare, verbose: true });
+        const targetMove = moves.find((m) => m.to === sqNotation);
 
-        // Check if sqNotation is in legalMoves
-        if (legalMoves.includes(sqNotation)) {
-          if (isPawnPromotion) {
-            // Trigger promotion modal
+        if (targetMove) {
+          // Check if promotion is needed (flag 'p' or 'cp' or promotion property)
+          if (targetMove.flags.includes('p') || targetMove.promotion) {
             setPendingPromotion({
               from: selectedSquare,
               to: sqNotation,
-              color: piece.color,
+              color: (chess.get(selectedSquare)?.color === 'w' ? 'w' : 'b') as PieceColor,
             });
             return;
           }
 
+          // Execute standard move
           makeMove(selectedSquare, sqNotation);
           return;
         }
       }
 
-      // 2. Otherwise select piece on square if it matches current turn
+      // Check piece on square from chess engine state
       const pieceOnSquare = chess.get(sqNotation);
+
+      // 2. If clicking a piece belonging to the current turn, select it and show legal moves
       if (pieceOnSquare && pieceOnSquare.color === turn) {
         setSelectedSquare(sqNotation);
-
-        // Fetch legal destination squares for this piece from chess.js
         const moves = chess.moves({ square: sqNotation, verbose: true });
         setLegalMoves(moves.map((m) => m.to as Square));
-      } else {
-        setSelectedSquare(null);
-        setLegalMoves([]);
+        return;
       }
+
+      // 3. Otherwise deselect
+      setSelectedSquare(null);
+      setLegalMoves([]);
     },
-    [chess, selectedSquare, legalMoves, turn, makeMove]
+    [chess, selectedSquare, turn, makeMove]
   );
 
   // Complete pending pawn promotion

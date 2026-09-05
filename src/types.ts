@@ -27,6 +27,13 @@ export interface GameRoom {
   opponentChessSide?: ChessSide;
 }
 
+export interface RematchState {
+  playerOneConfirmed: boolean;
+  playerTwoConfirmed: boolean;
+  rematchStarted: boolean;
+  declinedBy?: 'YOU' | 'OPPONENT' | null;
+}
+
 export type Screen = 
   | 'SPLASH'
   | 'ONBOARDING'
