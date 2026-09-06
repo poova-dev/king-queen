@@ -44,16 +44,11 @@ export const SplashScreen = ({ onComplete, isActive }: SplashScreenProps) => {
             transition={{ duration: 1.5, ease: [0.22, 1, 0.36, 1] }}
             className="relative flex flex-col items-center gap-8"
           >
-            <div className="w-32 h-32 relative">
+            <div className="w-36 h-36 relative">
               <img 
-                src="/3-snapchat.image.735cef7f-ae52-43c1-b8d0-e15321e19139.Woblo.png" 
+                src="/logo.png" 
                 alt="KING & QUEEN Logo"
-                className="w-full h-full object-contain"
-                onError={(e) => {
-                  // Fallback if logo not found
-                  (e.target as HTMLImageElement).src = "https://placehold.co/400x400/0E0E10/B89B5E?text=K+%26+Q";
-                }}
-                referrerPolicy="no-referrer"
+                className="w-full h-full object-contain filter drop-shadow-[0_4px_30px_rgba(184,155,94,0.4)]"
               />
             </div>
 

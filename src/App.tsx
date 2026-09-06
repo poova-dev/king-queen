@@ -197,14 +197,9 @@ function MainApp() {
         <div className="dust-particles" />
         <div className="w-24 h-24 relative mb-6">
           <img
-            src="/3-snapchat.image.735cef7f-ae52-43c1-b8d0-e15321e19139.Woblo.png"
+            src="/logo.png"
             alt="KING & QUEEN"
-            className="w-full h-full object-contain filter drop-shadow-[0_4px_20px_rgba(184,155,94,0.3)] animate-pulse"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src =
-                'https://placehold.co/400x400/0E0E10/B89B5E?text=K+%26+Q';
-            }}
-            referrerPolicy="no-referrer"
+            className="w-full h-full object-contain filter drop-shadow-[0_4px_25px_rgba(184,155,94,0.4)] animate-pulse"
           />
         </div>
         <h2 className="text-2xl font-display tracking-[0.15em] text-[#F2F0EB] uppercase mb-2">

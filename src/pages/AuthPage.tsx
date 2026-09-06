@@ -59,16 +59,11 @@ export const AuthPage = ({ onAuthSuccess }: AuthPageProps) => {
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         className="w-full max-w-md flex flex-col items-center text-center gap-4 mt-2"
       >
-        <div className="w-20 h-20 relative">
+        <div className="w-24 h-24 relative">
           <img
-            src="/3-snapchat.image.735cef7f-ae52-43c1-b8d0-e15321e19139.Woblo.png"
+            src="/logo.png"
             alt="KING & QUEEN"
-            className="w-full h-full object-contain filter drop-shadow-[0_4px_20px_rgba(184,155,94,0.3)]"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src =
-                'https://placehold.co/400x400/0E0E10/B89B5E?text=K+%26+Q';
-            }}
-            referrerPolicy="no-referrer"
+            className="w-full h-full object-contain filter drop-shadow-[0_4px_25px_rgba(184,155,94,0.35)]"
           />
         </div>
 

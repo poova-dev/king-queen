@@ -9,15 +9,11 @@ export const EntryScreen = ({ onContinue }: EntryScreenProps) => {
   return (
     <div className="flex flex-col h-screen px-8 py-12 bg-[var(--background)] justify-between">
       <div className="flex flex-col items-center gap-12 mt-20">
-        <div className="w-24 h-24 relative opacity-80">
+        <div className="w-24 h-24 relative">
           <img 
-            src="/3-snapchat.image.735cef7f-ae52-43c1-b8d0-e15321e19139.Woblo.png" 
-            alt="Logo" 
-            className="w-full h-full object-contain"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = "https://placehold.co/400x400/0E0E10/B89B5E?text=K+%26+Q";
-            }}
-            referrerPolicy="no-referrer"
+            src="/logo.png" 
+            alt="KING & QUEEN Logo" 
+            className="w-full h-full object-contain filter drop-shadow-[0_4px_25px_rgba(184,155,94,0.35)]"
           />
         </div>
 

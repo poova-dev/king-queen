@@ -14,7 +14,7 @@ export const HomeDashboard = ({ user, onCreateRoom, onJoinRoom, onSettings }: Ho
   return (
     <div className="flex flex-col min-h-screen px-6 py-8 bg-[var(--background)] pb-28">
       {/* Header */}
-      <header className="flex justify-between items-center mb-10">
+      <header className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-3">
           <Avatar size="sm" src={user.avatar} className="border border-[var(--primary)]" />
           <div className="flex flex-col">
@@ -22,6 +22,16 @@ export const HomeDashboard = ({ user, onCreateRoom, onJoinRoom, onSettings }: Ho
             <span className="text-[10px] text-[var(--primary)] font-bold tracking-[0.2em]">{user.identity}</span>
           </div>
         </div>
+
+        {/* Royal Brand Emblem */}
+        <div className="flex items-center gap-2">
+          <img
+            src="/logo.png"
+            alt="King & Queen"
+            className="w-10 h-10 object-contain filter drop-shadow-[0_2px_12px_rgba(184,155,94,0.4)]"
+          />
+        </div>
+
         <button 
           onClick={onSettings}
           className="w-10 h-10 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
