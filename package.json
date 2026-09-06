@@ -13,7 +13,8 @@
     "test:profile": "tsx src/services/profileService.test.ts",
     "test:room": "tsx src/services/roomService.test.ts",
     "test:game": "tsx src/services/gameService.test.ts",
-    "test": "npm run test:auth && npm run test:profile && npm run test:room && npm run test:game"
+    "test:history": "tsx src/services/gameHistoryService.test.ts",
+    "test": "npm run test:auth && npm run test:profile && npm run test:room && npm run test:game && npm run test:history"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
