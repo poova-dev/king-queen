@@ -12,6 +12,7 @@ import { ReactionPicker, FloatingReaction, FloatingReactionsContainer } from '..
 import { GameStatusBanner } from '../components/chess/GameStatusBanner';
 import { PromotionModal } from '../components/chess/PromotionModal';
 import { GameOverModal } from '../components/chess/GameOverModal';
+import { ResignConfirmationModal } from '../components/chess/ResignConfirmationModal';
 import { useChessGame } from '../hooks/useChessGame';
 import { useRematch } from '../hooks/useRematch';
 import { useRoom } from '../hooks/useRoom';
@@ -104,7 +105,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const isOpponentTurn = !isMyTurn && !isGameOver;
 
   const boardDisabled = isMultiplayer
-    ? !multiChess.isMyTurn || multiChess.isGameOver || multiChess.isSubmittingMove
+    ? !multiChess.isMyTurn || multiChess.isGameOver || multiChess.isSubmittingMove || multiChess.isResigning
     : isGameOver;
 
   // Modals & UI overlays
@@ -112,6 +113,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
   const [isGameOverDismissed, setIsGameOverDismissed] = useState(false);
+  const [isResignModalOpen, setIsResignModalOpen] = useState(false);
   const [resignedBy, setResignedBy] = useState<'YOU' | 'OPPONENT' | null>(null);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
@@ -167,8 +169,23 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   };
 
   const handleResign = () => {
-    setResignedBy('YOU');
-    setIsGameOverDismissed(false);
+    setIsOptionsOpen(false);
+    setIsResignModalOpen(true);
+  };
+
+  const handleConfirmResign = async () => {
+    if (isMultiplayer) {
+      try {
+        await multiChess.resign();
+        setIsResignModalOpen(false);
+      } catch (err) {
+        console.error('[Resign Error]', err);
+      }
+    } else {
+      setResignedBy('YOU');
+      setIsGameOverDismissed(false);
+      setIsResignModalOpen(false);
+    }
   };
 
   const handlePlayAgain = () => {
@@ -186,7 +203,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
 
   const handleExitGame = () => {
-    if (isGameOver || resignedBy !== null) {
+    if (isGameOver || (!isMultiplayer && resignedBy !== null)) {
       setIsExitConfirmOpen(true);
     } else {
       performImmediateExit();
@@ -222,8 +239,14 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     onExit();
   };
 
+  const isResignation = isMultiplayer
+    ? multiChess.endReason === 'RESIGNATION'
+    : resignedBy !== null;
+
   // Determine game over winner
-  const effectiveWinner = resignedBy
+  const effectiveWinner = isMultiplayer
+    ? multiChess.winner
+    : resignedBy
     ? resignedBy === 'YOU'
       ? 'OPPONENT'
       : 'YOU'
@@ -233,9 +256,9 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     effectiveWinner === 'YOU' ? user : effectiveWinner === 'OPPONENT' ? opponent : null;
 
   const showGameOverModal =
-    (isGameOver || resignedBy !== null) && !isGameOverDismissed;
+    (isGameOver || (!isMultiplayer && resignedBy !== null)) && !isGameOverDismissed;
 
-  const gameOverResultType = resignedBy
+  const gameOverResultType = isResignation
     ? 'RESIGNATION'
     : isCheckmate
     ? 'CHECKMATE'
@@ -383,6 +406,8 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             onOpenHistory={() => setIsHistoryOpen(true)}
             onOpenReactions={() => setIsReactionPickerOpen(true)}
             onOpenOptions={() => setIsOptionsOpen(true)}
+            onResign={handleResign}
+            isResignDisabled={isGameOver || multiChess.isResigning || (!isMultiplayer && resignedBy !== null)}
           />
         </div>
 
@@ -391,7 +416,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
           <span>
             Moves Played: <strong className="text-[var(--text)]">{moveHistory.length}</strong>
           </span>
-          {isGameOver || resignedBy !== null ? (
+          {isGameOver || (!isMultiplayer && resignedBy !== null) ? (
             <button
               onClick={() => setIsGameOverDismissed(false)}
               className="text-[var(--primary)] hover:underline font-semibold tracking-wider uppercase text-[10px] flex items-center gap-1"
@@ -423,6 +448,14 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         onOfferDraw={handleOfferDraw}
         onResign={handleResign}
         onExitGame={handleExitGame}
+      />
+
+      {/* RESIGN CONFIRMATION MODAL */}
+      <ResignConfirmationModal
+        isOpen={isResignModalOpen}
+        isProcessing={multiChess.isResigning}
+        onClose={() => setIsResignModalOpen(false)}
+        onConfirm={handleConfirmResign}
       />
 
       {/* REACTION PICKER POPUP */}

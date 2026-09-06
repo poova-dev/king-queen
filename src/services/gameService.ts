@@ -86,6 +86,7 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         moveNumber: 0,
         version: 0,
         winnerUid: null,
+        resignedBy: null,
         endReason: null,
         finishedAt: null,
         statsProcessed: false,
@@ -106,6 +107,7 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         'gameState.moveNumber': 0,
         'gameState.version': 0,
         'gameState.winnerUid': null,
+        'gameState.resignedBy': null,
         'gameState.endReason': null,
         'gameState.finishedAt': null,
         'gameState.statsProcessed': false,
@@ -366,6 +368,85 @@ export const makeMove = async (
     });
 
     return updatedGameState;
+  });
+};
+
+/**
+ * Authoritative resignation transaction inside rooms/{roomId}.
+ * Validates player identity, game status, sets opponent as winner,
+ * and marks game as FINISHED with endReason RESIGNATION.
+ */
+export const resignGame = async (
+  roomId: string,
+  resigningUid: string
+): Promise<void> => {
+  const roomRef = doc(db, 'rooms', roomId);
+
+  if (import.meta.env?.DEV) {
+    console.log(`[Game] Resignation requested by ${resigningUid} in room ${roomId}`);
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('ROOM_NOT_FOUND');
+    }
+
+    const room = roomSnap.data() as RoomDocument;
+
+    // Verify room is in an active playing state
+    if (room.status !== 'PLAYING' && room.status !== 'READY') {
+      throw new Error('GAME_ALREADY_FINISHED');
+    }
+
+    const currentGameState = room.gameState;
+    if (!currentGameState) {
+      throw new Error('GAME_NOT_INITIALIZED');
+    }
+
+    // Verify game is not already concluded
+    if (
+      currentGameState.status === 'FINISHED' ||
+      currentGameState.status === 'CHECKMATE' ||
+      currentGameState.status === 'DRAW' ||
+      currentGameState.status === 'STALEMATE'
+    ) {
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Game already finished');
+      }
+      throw new Error('GAME_ALREADY_FINISHED');
+    }
+
+    // Verify calling user belongs to room
+    const resigningPlayer = room.players.find((p) => p.uid === resigningUid);
+    if (!resigningPlayer) {
+      throw new Error('NOT_ROOM_PARTICIPANT');
+    }
+
+    // Find the opponent who will be awarded victory
+    const opponent = room.players.find((p) => p.uid !== resigningUid);
+    if (!opponent || !opponent.uid) {
+      throw new Error('OPPONENT_NOT_FOUND');
+    }
+
+    if (import.meta.env?.DEV) {
+      console.log('[Game] Processing resignation transaction');
+      console.log(`[Game] Player ${resigningUid} resigned`);
+      console.log(`[Game] Opponent ${opponent.uid} declared winner`);
+    }
+
+    // Atomically transition gameState & room to FINISHED with RESIGNATION
+    // Use dot notation to avoid replacing the complete gameState object
+    transaction.update(roomRef, {
+      'gameState.status': 'FINISHED',
+      'gameState.endReason': 'RESIGNATION',
+      'gameState.winnerUid': opponent.uid,
+      'gameState.resignedBy': resigningUid,
+      'gameState.finishedAt': serverTimestamp(),
+      'gameState.updatedAt': serverTimestamp(),
+      status: 'FINISHED',
+      updatedAt: serverTimestamp(),
+    });
   });
 };
 
@@ -680,6 +761,7 @@ export const respondToRematch = async (
       'gameState.moveNumber': 0,
       'gameState.version': 0,
       'gameState.winnerUid': null,
+      'gameState.resignedBy': null,
       'gameState.endReason': null,
       'gameState.finishedAt': null,
       'gameState.statsProcessed': false,
@@ -774,9 +856,10 @@ export const mapGameError = (error: any): string => {
     case 'GAME_NOT_ACTIVE':
       return 'This game is currently not active.';
     case 'GAME_ALREADY_FINISHED':
-      return 'The match has already concluded.';
+      return 'This battle has already ended.';
+    case 'NOT_ROOM_PARTICIPANT':
     case 'NOT_AUTHORIZED':
-      return 'You are not authorized to make a move in this game.';
+      return 'You are not part of this battle.';
     case 'permission-denied':
       return 'Firestore permission denied. Check security rules.';
     default:

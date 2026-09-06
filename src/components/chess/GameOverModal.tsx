@@ -106,6 +106,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           <div className="w-18 h-18 rounded-2xl bg-[var(--surface-light)] border border-[var(--border)] flex items-center justify-center text-3xl text-[var(--primary)] shadow-inner">
             ⚖️
           </div>
+        ) : isResignation && !isWin ? (
+          <div className="w-18 h-18 rounded-2xl bg-[var(--surface-light)] border border-rose-500/40 flex items-center justify-center text-3xl text-rose-400 shadow-inner">
+            🏳
+          </div>
         ) : (
           <div className="relative">
             <Avatar
@@ -125,7 +129,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             {isCheckmate
               ? 'CHECKMATE'
               : isResignation
-              ? 'RESIGNATION'
+              ? isWin
+                ? '👑 VICTORY'
+                : '🏳 DEFEAT'
               : endReason === 'STALEMATE' || isStalemate
               ? 'STALEMATE'
               : endReason === 'THREEFOLD_REPETITION'
@@ -140,6 +146,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           <h2 className="text-2xl font-display text-[var(--text)] tracking-wider">
             {isDraw
               ? 'THE BATTLE ENDS IN A DRAW'
+              : isResignation
+              ? isWin
+                ? 'VICTORY!'
+                : 'THE CROWN FALLS'
               : isWin
               ? 'VICTORY 👑'
               : 'THE KINGDOM FALLS'}
@@ -156,6 +166,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 : endReason === 'FIFTY_MOVE_RULE'
                 ? 'Fifty moves occurred without a pawn move or capture.'
                 : 'Two rulers. One balanced battle.'
+              : isResignation
+              ? isWin
+                ? 'Your opponent surrendered the throne.'
+                : 'You surrendered the battle.'
               : isWin
               ? 'Your strategy ruled the board.'
               : 'A worthy battle. The crown awaits another game.'}

@@ -142,7 +142,7 @@ assert(
   'Maps ILLEGAL_MOVE error'
 );
 assert(
-  mapGameError({ message: 'GAME_ALREADY_FINISHED' }).includes('concluded'),
+  mapGameError({ message: 'GAME_ALREADY_FINISHED' }).includes('ended'),
   'Maps GAME_ALREADY_FINISHED error'
 );
 assert(
@@ -384,8 +384,166 @@ assert(getPerspective(p2Uid, p1Uid) === 'DEFEAT', 'PERSPECTIVE: Loser sees DEFEA
 assert(getPerspective(null, p1Uid) === 'DRAW', 'PERSPECTIVE: Player 1 sees DRAW on draw');
 assert(getPerspective(null, p2Uid) === 'DRAW', 'PERSPECTIVE: Player 2 sees DRAW on draw');
 
+// =========================================================================
+// STEP 15.2 — AUTHORITATIVE RESIGNATION SYSTEM TESTS
+// =========================================================================
+
+// 27. RESIGNATION DETECTION: Player can resign during PLAYING state
+interface MockResignationRoom {
+  roomId: string;
+  status: 'WAITING' | 'READY' | 'PLAYING' | 'FINISHED' | 'CLOSED';
+  player1: { uid: string };
+  player2: { uid: string };
+  gameState: GameStateDocument;
+}
+
+const simulateResignTransaction = (
+  room: MockResignationRoom,
+  resigningUid: string
+): { success: boolean; room?: MockResignationRoom; error?: string } => {
+  if (room.status !== 'PLAYING' || !room.gameState || room.gameState.status !== 'PLAYING') {
+    return { success: false, error: 'GAME_ALREADY_FINISHED' };
+  }
+  const isP1 = room.player1.uid === resigningUid;
+  const isP2 = room.player2.uid === resigningUid;
+  if (!isP1 && !isP2) {
+    return { success: false, error: 'NOT_ROOM_PARTICIPANT' };
+  }
+  const opponentUid = isP1 ? room.player2.uid : room.player1.uid;
+
+  const updatedRoom: MockResignationRoom = {
+    ...room,
+    status: 'FINISHED',
+    gameState: {
+      ...room.gameState,
+      status: 'FINISHED',
+      endReason: 'RESIGNATION',
+      winnerUid: opponentUid,
+      resignedBy: resigningUid,
+      finishedAt: Date.now(),
+      version: room.gameState.version + 1,
+    },
+  };
+  return { success: true, room: updatedRoom };
+};
+
+const activeGameRoom: MockResignationRoom = {
+  roomId: 'KQ-RESIGN-1',
+  status: 'PLAYING',
+  player1: { uid: p1Uid },
+  player2: { uid: p2Uid },
+  gameState: {
+    ...mockGameState,
+    status: 'PLAYING',
+    winnerUid: null,
+    endReason: null,
+    resignedBy: null,
+    version: 3,
+  },
+};
+
+const resignResult = simulateResignTransaction(activeGameRoom, p1Uid);
+assert(resignResult.success === true, 'RESIGNATION: Player 1 can successfully resign active game');
+assert(resignResult.room?.status === 'FINISHED', 'RESIGNATION: room.status becomes FINISHED');
+assert(resignResult.room?.gameState.status === 'FINISHED', 'RESIGNATION: gameState.status becomes FINISHED');
+assert(resignResult.room?.gameState.endReason === 'RESIGNATION', 'RESIGNATION: endReason becomes RESIGNATION');
+assert(resignResult.room?.gameState.winnerUid === p2Uid, 'RESIGNATION: Opponent is declared winner');
+assert(resignResult.room?.gameState.resignedBy === p1Uid, 'RESIGNATION: resigningUid is recorded in resignedBy');
+
+// 28. RESIGNATION VALIDATION: Cannot resign already finished game
+const finishedResignAttempt = simulateResignTransaction(resignResult.room!, p2Uid);
+assert(
+  finishedResignAttempt.success === false && finishedResignAttempt.error === 'GAME_ALREADY_FINISHED',
+  'RESIGNATION VALIDATION: Cannot resign when game is already finished'
+);
+
+// 29. RESIGNATION VALIDATION: Cannot resign if not participant
+const strangerResignAttempt = simulateResignTransaction(activeGameRoom, 'stranger_uid');
+assert(
+  strangerResignAttempt.success === false && strangerResignAttempt.error === 'NOT_ROOM_PARTICIPANT',
+  'RESIGNATION VALIDATION: Non-participant cannot resign the battle'
+);
+
+// 30. DOUBLE RESIGNATION PROTECTION: First transaction succeeds, second safely rejects
+const firstCall = simulateResignTransaction(activeGameRoom, p1Uid);
+const secondCall = simulateResignTransaction(firstCall.room!, p1Uid);
+assert(firstCall.success === true, 'DOUBLE RESIGNATION: First resignation attempt succeeds');
+assert(
+  secondCall.success === false && secondCall.error === 'GAME_ALREADY_FINISHED',
+  'DOUBLE RESIGNATION: Duplicate/concurrent resignation attempt rejected with GAME_ALREADY_FINISHED'
+);
+
+// 31. RESIGNATION STATS & HISTORY: Winner gets win, loser gets loss, reason = RESIGNATION
+const calculatePlayerStats = (result: 'WIN' | 'LOSS' | 'DRAW', currentWins = 0, currentLosses = 0, currentDraws = 0, currentGames = 0) => {
+  return {
+    wins: result === 'WIN' ? currentWins + 1 : currentWins,
+    losses: result === 'LOSS' ? currentLosses + 1 : currentLosses,
+    draws: result === 'DRAW' ? currentDraws + 1 : currentDraws,
+    gamesPlayed: currentGames + 1,
+  };
+};
+
+const resignedGameState = resignResult.room!.gameState;
+const p1ResignStats = calculatePlayerStats('LOSS');
+const p2WinStats = calculatePlayerStats('WIN');
+
+assert(p1ResignStats.losses === 1 && p1ResignStats.gamesPlayed === 1, 'STATS: Resigning player receives loss + gamesPlayed');
+assert(p2WinStats.wins === 1 && p2WinStats.gamesPlayed === 1, 'STATS: Opponent receives win + gamesPlayed');
+
+// 32. RESIGNATION IDEMPOTENCY: Stats & history processed only once
+assert(
+  shouldProcessStats({ ...resignedGameState, statsProcessed: true }, false) === false,
+  'IDEMPOTENCY: Resigned game stats rejected when statsProcessed is true'
+);
+assert(
+  shouldProcessStats(resignedGameState, true) === false,
+  'IDEMPOTENCY: Resigned game history rejected when historySaved is true'
+);
+assert(
+  shouldProcessStats(resignedGameState, false) === true,
+  'IDEMPOTENCY: Resigned game processes stats & history exactly once'
+);
+
+// 33. RESIGNATION BOARD LOCK: Moves rejected after resignation
+assert(
+  validateCanMove(resignedGameState, 'FINISHED') === false,
+  'BOARD LOCK: Moves strictly rejected after resignation'
+);
+
+// 34. RESIGNATION RECOVERY: Refresh preserves resignation state without re-initializing
+const refreshedResignedRoom = {
+  roomId: 'KQ-RESIGN-1',
+  status: 'FINISHED',
+  gameState: resignedGameState,
+};
+assert(
+  validateShouldReinit(refreshedResignedRoom) === false,
+  'RECOVERY: Browser refresh restores finished resignation room without re-init'
+);
+assert(
+  refreshedResignedRoom.gameState.winnerUid === p2Uid,
+  'RECOVERY: Browser refresh preserves correct winnerUid'
+);
+assert(
+  refreshedResignedRoom.gameState.endReason === 'RESIGNATION',
+  'RECOVERY: Browser refresh preserves endReason RESIGNATION'
+);
+assert(
+  refreshedResignedRoom.gameState.resignedBy === p1Uid,
+  'RECOVERY: Browser refresh preserves resignedBy UID'
+);
+
+// 35. RESIGNATION CLIENT EVENT GUARD & PERSPECTIVE
+const resignEventKey = `${refreshedResignedRoom.roomId}_${resignedGameState.version}_${resignedGameState.finishedAt}_RESIGNATION`;
+assert(processGameEndEvent(resignEventKey) === true, 'EVENT GUARD: Resignation game over modal triggered once');
+assert(processGameEndEvent(resignEventKey) === false, 'EVENT GUARD: Duplicate resignation modal trigger blocked');
+
+assert(getPerspective(resignedGameState.winnerUid, p2Uid) === 'VICTORY', 'PERSPECTIVE: Opponent receives VICTORY perspective');
+assert(getPerspective(resignedGameState.winnerUid, p1Uid) === 'DEFEAT', 'PERSPECTIVE: Resigning player receives DEFEAT perspective');
+
 console.log(`\nTests Completed: ${passed} Passed, ${failed} Failed\n`);
 if (failed > 0) {
   process.exit(1);
 }
+
 

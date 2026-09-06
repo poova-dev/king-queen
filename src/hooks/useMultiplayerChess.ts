@@ -13,6 +13,7 @@ import { ChessMoveItem } from '../components/chess/MoveHistoryDrawer';
 import {
   initializeGameState,
   makeMove as apiMakeMove,
+  resignGame as apiResignGame,
   processGameStats,
   requestRematch as apiRequestRematch,
   respondToRematch as apiRespondToRematch,
@@ -57,6 +58,7 @@ export const useMultiplayerChess = ({
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [isSubmittingMove, setIsSubmittingMove] = useState<boolean>(false);
+  const [isResigning, setIsResigning] = useState<boolean>(false);
   const [moveError, setMoveError] = useState<string | null>(null);
 
   const gameState = room?.gameState || null;
@@ -162,7 +164,7 @@ export const useMultiplayerChess = ({
       const finishTime = gameState.finishedAt?.toMillis
         ? gameState.finishedAt.toMillis()
         : gameState.finishedAt || 'ended';
-      const eventKey = `${roomId}_${gameState.version}_${finishTime}`;
+      const eventKey = `${roomId}_${gameState.version}_${finishTime}_${gameState.endReason || ''}`;
 
       // UI event guard preventing duplicate completion calls from re-renders or StrictMode
       if (processedGameEndRef.current === eventKey) {
@@ -176,7 +178,7 @@ export const useMultiplayerChess = ({
         }
       });
     }
-  }, [roomId, isGameOver, gameState?.statsProcessed, gameState?.version, gameState?.finishedAt]);
+  }, [roomId, isGameOver, gameState?.statsProcessed, gameState?.version, gameState?.finishedAt, gameState?.endReason]);
 
   // 4. Derived King square in check
   const checkSquare = useMemo((): string | null => {
@@ -438,6 +440,20 @@ export const useMultiplayerChess = ({
     [roomId, userUid]
   );
 
+  // Authoritative Resign Handler
+  const resign = useCallback(async () => {
+    if (!roomId || !userUid || isResigning || isGameOver) return;
+    setIsResigning(true);
+    setMoveError(null);
+    try {
+      await apiResignGame(roomId, userUid);
+    } catch (err: any) {
+      setMoveError(mapGameError(err));
+    } finally {
+      setIsResigning(false);
+    }
+  }, [roomId, userUid, isResigning, isGameOver]);
+
   const endReason: GameEndReason | null = gameState?.endReason || null;
 
   const isDraw: boolean =
@@ -482,6 +498,7 @@ export const useMultiplayerChess = ({
     capturedByBlack,
     pendingPromotion,
     isSubmittingMove,
+    isResigning,
     moveError,
     rematchRequest:
       gameState?.rematchRequest && !isRematchExpired(gameState.rematchRequest.requestedAt)
@@ -493,6 +510,7 @@ export const useMultiplayerChess = ({
     cancelPromotion,
     requestRematch,
     respondToRematch,
+    resign,
     clearError: () => setMoveError(null),
   };
 };

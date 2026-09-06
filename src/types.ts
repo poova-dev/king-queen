@@ -207,6 +207,7 @@ export interface GameStateDocument {
   moveNumber: number;
   version: number;
   winnerUid: string | null;
+  resignedBy?: string | null;
   endReason?: GameEndReason | null;
   finishedAt?: any;
   statsProcessed?: boolean;
