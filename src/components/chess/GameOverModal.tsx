@@ -2,11 +2,12 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check, Clock, UserCheck, LogOut, Eye, Sparkles, AlertCircle } from 'lucide-react';
 import { Avatar, Button } from '../UI';
-import { PlayerIdentity, UserProfile, RematchState } from '../../types';
+import { PlayerIdentity, UserProfile, RematchState, GameEndReason } from '../../types';
 
 export interface GameOverModalProps {
   isOpen: boolean;
   resultType: 'CHECKMATE' | 'STALEMATE' | 'DRAW' | 'RESIGNATION';
+  endReason?: GameEndReason | null;
   winner?: 'YOU' | 'OPPONENT' | null;
   winnerIdentity?: PlayerIdentity;
   winnerName?: string;
@@ -26,6 +27,7 @@ export interface GameOverModalProps {
 export const GameOverModal: React.FC<GameOverModalProps> = ({
   isOpen,
   resultType,
+  endReason,
   winner,
   winnerIdentity,
   winnerName,
@@ -43,9 +45,16 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const isCheckmate = resultType === 'CHECKMATE';
-  const isResignation = resultType === 'RESIGNATION';
-  const isDraw = resultType === 'DRAW' || resultType === 'STALEMATE';
+  const isCheckmate = resultType === 'CHECKMATE' || endReason === 'CHECKMATE';
+  const isResignation = resultType === 'RESIGNATION' || endReason === 'RESIGNATION';
+  const isStalemate = resultType === 'STALEMATE' || endReason === 'STALEMATE';
+  const isDraw =
+    isStalemate ||
+    resultType === 'DRAW' ||
+    (endReason !== undefined &&
+      endReason !== null &&
+      endReason !== 'CHECKMATE' &&
+      endReason !== 'RESIGNATION');
   const isWin = winner === 'YOU';
 
   const roleIcon = winnerIdentity === 'KING' ? '♔' : '♕';
@@ -117,8 +126,14 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               ? 'CHECKMATE'
               : isResignation
               ? 'RESIGNATION'
-              : resultType === 'STALEMATE'
+              : endReason === 'STALEMATE' || isStalemate
               ? 'STALEMATE'
+              : endReason === 'THREEFOLD_REPETITION'
+              ? 'THREEFOLD REPETITION'
+              : endReason === 'INSUFFICIENT_MATERIAL'
+              ? 'INSUFFICIENT MATERIAL'
+              : endReason === 'FIFTY_MOVE_RULE'
+              ? 'FIFTY-MOVE RULE'
               : 'DRAW'}
           </span>
 
@@ -132,7 +147,15 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
           <p className="text-xs text-[var(--text-muted)] leading-relaxed max-w-xs mt-0.5">
             {isDraw
-              ? 'Two rulers. One balanced battle.'
+              ? endReason === 'STALEMATE' || isStalemate
+                ? 'No legal moves remain. The battle ends in stalemate.'
+                : endReason === 'THREEFOLD_REPETITION'
+                ? 'The exact board position was repeated three times.'
+                : endReason === 'INSUFFICIENT_MATERIAL'
+                ? 'Neither sovereign has enough pieces to force checkmate.'
+                : endReason === 'FIFTY_MOVE_RULE'
+                ? 'Fifty moves occurred without a pawn move or capture.'
+                : 'Two rulers. One balanced battle.'
               : isWin
               ? 'Your strategy ruled the board.'
               : 'A worthy battle. The crown awaits another game.'}

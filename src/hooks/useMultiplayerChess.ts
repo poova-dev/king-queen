@@ -5,6 +5,7 @@ import {
   GameStateDocument,
   ChessSide,
   MultiplayerGameStatus,
+  GameEndReason,
 } from '../types';
 import { SquareData } from '../components/chess/ChessSquare';
 import { PieceType, PieceColor } from '../components/chess/ChessPiece';
@@ -80,9 +81,12 @@ export const useMultiplayerChess = ({
   const authoritativeStatus: MultiplayerGameStatus = gameState?.status || 'PLAYING';
 
   const isGameOver =
+    authoritativeStatus === 'FINISHED' ||
     authoritativeStatus === 'CHECKMATE' ||
     authoritativeStatus === 'DRAW' ||
-    authoritativeStatus === 'STALEMATE';
+    authoritativeStatus === 'STALEMATE' ||
+    room?.status === 'FINISHED' ||
+    room?.status === 'COMPLETED';
 
   const isMyTurn = Boolean(
     myChessColor &&
@@ -92,10 +96,20 @@ export const useMultiplayerChess = ({
   );
 
   const initializationAttemptedRef = useRef<string | null>(null);
+  const processedGameEndRef = useRef<string | null>(null);
 
   // 1. One-time GameState Initialization when room reaches PLAYING
   useEffect(() => {
     if (!roomId || !room) return;
+
+    // If room is already concluded, do not initialize
+    if (
+      room.status === 'FINISHED' ||
+      room.status === 'COMPLETED' ||
+      room.status === 'CLOSED'
+    ) {
+      return;
+    }
 
     // If gameState already exists, mark initialized for this room
     if (room.gameState && room.gameState.fen) {
@@ -145,13 +159,24 @@ export const useMultiplayerChess = ({
   useEffect(() => {
     if (!roomId || !gameState) return;
     if (isGameOver && !gameState.statsProcessed) {
+      const finishTime = gameState.finishedAt?.toMillis
+        ? gameState.finishedAt.toMillis()
+        : gameState.finishedAt || 'ended';
+      const eventKey = `${roomId}_${gameState.version}_${finishTime}`;
+
+      // UI event guard preventing duplicate completion calls from re-renders or StrictMode
+      if (processedGameEndRef.current === eventKey) {
+        return;
+      }
+      processedGameEndRef.current = eventKey;
+
       processGameStats(roomId).catch((err) => {
         if (import.meta.env?.DEV) {
           console.warn('[processGameStats Error]', err);
         }
       });
     }
-  }, [roomId, isGameOver, gameState?.statsProcessed, gameState]);
+  }, [roomId, isGameOver, gameState?.statsProcessed, gameState?.version, gameState?.finishedAt]);
 
   // 4. Derived King square in check
   const checkSquare = useMemo((): string | null => {
@@ -267,7 +292,7 @@ export const useMultiplayerChess = ({
   // 8. Execute Authoritative Move via Firestore Transaction
   const executeMove = useCallback(
     async (from: Square, to: Square, promotion?: PieceType) => {
-      if (!roomId || !userUid || isSubmittingMove) return false;
+      if (!roomId || !userUid || isSubmittingMove || isGameOver) return false;
 
       const chess = chessRef.current;
 
@@ -318,7 +343,7 @@ export const useMultiplayerChess = ({
         setIsSubmittingMove(false);
       }
     },
-    [roomId, userUid, isSubmittingMove, gameState?.fen]
+    [roomId, userUid, isSubmittingMove, isGameOver, gameState?.fen]
   );
 
   // 9. Square Click Handler
@@ -413,10 +438,22 @@ export const useMultiplayerChess = ({
     [roomId, userUid]
   );
 
-  // Winner calculation
+  const endReason: GameEndReason | null = gameState?.endReason || null;
+
+  const isDraw: boolean =
+    authoritativeStatus === 'DRAW' ||
+    authoritativeStatus === 'STALEMATE' ||
+    endReason === 'STALEMATE' ||
+    endReason === 'THREEFOLD_REPETITION' ||
+    endReason === 'INSUFFICIENT_MATERIAL' ||
+    endReason === 'FIFTY_MOVE_RULE' ||
+    endReason === 'DRAW' ||
+    Boolean(isGameOver && gameState?.winnerUid === null);
+
+  // Authoritative perspective winner calculation
   const winner: 'YOU' | 'OPPONENT' | null = useMemo(() => {
     if (!gameState || !userUid) return null;
-    if (gameState.status === 'CHECKMATE') {
+    if (gameState.winnerUid) {
       return gameState.winnerUid === userUid ? 'YOU' : 'OPPONENT';
     }
     return null;
@@ -427,6 +464,8 @@ export const useMultiplayerChess = ({
     fen,
     turn: authoritativeTurn,
     gameStatus: authoritativeStatus,
+    endReason,
+    isDraw,
     myChessColor,
     opponentChessColor,
     isMyTurn,

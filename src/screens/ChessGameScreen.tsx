@@ -78,13 +78,13 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     ? multiChess.gameStatus === 'CHECK'
     : localChess.isCheck;
   const isCheckmate = isMultiplayer
-    ? multiChess.gameStatus === 'CHECKMATE'
+    ? multiChess.endReason === 'CHECKMATE' || multiChess.gameStatus === 'CHECKMATE'
     : localChess.isCheckmate;
   const isDraw = isMultiplayer
-    ? multiChess.gameStatus === 'DRAW'
+    ? multiChess.isDraw
     : localChess.isDraw;
   const isStalemate = isMultiplayer
-    ? multiChess.gameStatus === 'STALEMATE'
+    ? multiChess.endReason === 'STALEMATE' || multiChess.gameStatus === 'STALEMATE'
     : localChess.isStalemate;
   const checkSquare = isMultiplayer ? multiChess.checkSquare : localChess.checkSquare;
   const selectedSquare = isMultiplayer ? multiChess.selectedSquare : localChess.selectedSquare;
@@ -443,6 +443,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
       <GameOverModal
         isOpen={showGameOverModal}
         resultType={gameOverResultType}
+        endReason={isMultiplayer ? multiChess.endReason : undefined}
         winner={effectiveWinner}
         winnerIdentity={winnerProfile?.identity}
         winnerName={winnerProfile?.displayName}

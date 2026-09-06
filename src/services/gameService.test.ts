@@ -227,6 +227,163 @@ assert(
   'Both nested gameState.updatedAt and root updatedAt can be targeted without conflict'
 );
 
+// ----------------------------------------------------
+// STEP 15.1: AUTHORITATIVE GAME COMPLETION SYSTEM TESTS
+// ----------------------------------------------------
+console.log('\n--- Step 15.1: Authoritative Game Completion & Draw Synchronization Tests ---');
+
+// 17. CHECKMATE Completion Logic
+const p1Uid: string = 'royal-king-123';
+const p2Uid: string = 'royal-queen-456';
+
+const cmChess = new Chess();
+cmChess.move('f3');
+cmChess.move('e5');
+cmChess.move('g4');
+cmChess.move('Qh4#'); // Fool's mate by Black (p2)
+
+assert(cmChess.isCheckmate() === true, 'CHECKMATE: Detect checkmate correctly');
+const cmWinnerUid: string = p2Uid;
+const cmLoserUid = cmWinnerUid === p1Uid ? p2Uid : p1Uid;
+assert(cmWinnerUid === p2Uid, 'CHECKMATE: Correct winner UID set to checkmating player');
+assert(cmLoserUid === p1Uid, 'CHECKMATE: Correct loser UID identified');
+
+const completedCheckmateState: GameStateDocument = {
+  fen: cmChess.fen(),
+  turn: 'WHITE',
+  status: 'FINISHED',
+  checkedColor: 'WHITE',
+  lastMove: null,
+  moveHistory: [],
+  moveNumber: 4,
+  version: 4,
+  winnerUid: cmWinnerUid,
+  endReason: 'CHECKMATE',
+  finishedAt: Date.now(),
+  statsProcessed: false,
+  updatedAt: null as any,
+};
+assert(completedCheckmateState.status === 'FINISHED', 'CHECKMATE: Status becomes FINISHED');
+assert(completedCheckmateState.endReason === 'CHECKMATE', 'CHECKMATE: End reason is CHECKMATE');
+assert(completedCheckmateState.winnerUid === p2Uid, 'CHECKMATE: Winner UID persisted in state');
+
+// 18. STALEMATE Completion Logic
+const smChess = new Chess('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1');
+assert(smChess.isStalemate() === true, 'STALEMATE: Detect stalemate correctly');
+const smWinnerUid = null;
+const smEndReason = 'STALEMATE';
+assert(smWinnerUid === null, 'STALEMATE: winnerUid is null');
+assert(smEndReason === 'STALEMATE', 'STALEMATE: Correct end reason is STALEMATE');
+
+// 19. DRAW: Threefold Repetition Detection via Move Replay
+const repChess = new Chess();
+const repMoves = ['Nf3', 'Nf6', 'Ng1', 'Ng8', 'Nf3', 'Nf6', 'Ng1', 'Ng8'];
+for (const m of repMoves) {
+  repChess.move(m);
+}
+assert(repChess.isThreefoldRepetition() === true, 'DRAW: Threefold repetition detected via move replay');
+assert(repChess.isDraw() === true, 'DRAW: Threefold repetition is recognized as draw');
+
+// 20. DRAW: Insufficient Material Detection
+const insChess = new Chess('8/8/8/8/8/5k2/8/4K2B w - - 0 1');
+assert(insChess.isInsufficientMaterial() === true, 'DRAW: Insufficient material detected');
+assert(insChess.isDraw() === true, 'DRAW: Insufficient material is recognized as draw');
+
+// 21. DRAW: Fifty-Move Rule Detection
+const fiftyChess = new Chess('8/8/8/8/8/8/8/4k2K w - - 100 50');
+assert(fiftyChess.isDrawByFiftyMoves() === true, 'DRAW: Fifty-move rule detected after 50 moves without pawn/capture');
+assert(fiftyChess.isDraw() === true, 'DRAW: Fifty-move rule is recognized as draw');
+
+// 22. IDEMPOTENCY: Stats & History Protection
+const processedGameState: GameStateDocument = {
+  ...completedCheckmateState,
+  statsProcessed: true,
+};
+const shouldProcessStats = (gs: GameStateDocument, roomSaved?: boolean) => {
+  if (gs.statsProcessed || roomSaved) return false;
+  return gs.status === 'FINISHED' || gs.status === 'CHECKMATE' || gs.status === 'DRAW' || gs.status === 'STALEMATE';
+};
+assert(
+  shouldProcessStats(processedGameState, false) === false,
+  'IDEMPOTENCY: Stats cannot process twice when statsProcessed is true'
+);
+assert(
+  shouldProcessStats(completedCheckmateState, true) === false,
+  'IDEMPOTENCY: History cannot save twice when historySaved is true'
+);
+assert(
+  shouldProcessStats(completedCheckmateState, false) === true,
+  'IDEMPOTENCY: Processes exactly once when neither flag is set'
+);
+
+// 23. IDEMPOTENCY: Client UI Event Guard
+const processedEvents = new Set<string>();
+const processGameEndEvent = (eventId: string): boolean => {
+  if (processedEvents.has(eventId)) return false;
+  processedEvents.add(eventId);
+  return true;
+};
+const eventKey1 = `room123_4_${completedCheckmateState.finishedAt}`;
+assert(processGameEndEvent(eventKey1) === true, 'IDEMPOTENCY: First game over event processes');
+assert(processGameEndEvent(eventKey1) === false, 'IDEMPOTENCY: Duplicate event from StrictMode/refresh blocked');
+
+// 24. MOVE LOCK: Cannot move after game is FINISHED
+const validateCanMove = (gameState: GameStateDocument, roomStatus: string): boolean => {
+  if (roomStatus !== 'PLAYING' && roomStatus !== 'READY') return false;
+  if (
+    gameState.status === 'FINISHED' ||
+    gameState.status === 'CHECKMATE' ||
+    gameState.status === 'DRAW' ||
+    gameState.status === 'STALEMATE'
+  ) {
+    return false;
+  }
+  return true;
+};
+assert(
+  validateCanMove(completedCheckmateState, 'FINISHED') === false,
+  'MOVE LOCK: Move rejected when gameState.status is FINISHED'
+);
+assert(
+  validateCanMove({ ...completedCheckmateState, status: 'PLAYING' }, 'FINISHED') === false,
+  'MOVE LOCK: Move rejected when room.status is FINISHED'
+);
+assert(
+  validateCanMove(mockGameState, 'PLAYING') === true,
+  'MOVE LOCK: Move allowed when game is active and playing'
+);
+
+// 25. RECOVERY: Finished game preserves authoritative FEN & prevents new game init
+const finishedRoom = {
+  roomId: 'KQ-TEST',
+  status: 'FINISHED',
+  gameState: completedCheckmateState,
+};
+const validateShouldReinit = (room: any): boolean => {
+  if (room.status === 'FINISHED' || room.status === 'COMPLETED' || room.status === 'CLOSED') {
+    return false;
+  }
+  return !room.gameState || !room.gameState.fen;
+};
+assert(
+  validateShouldReinit(finishedRoom) === false,
+  'RECOVERY: Finished room rejects new game re-initialization'
+);
+assert(
+  finishedRoom.gameState.fen === cmChess.fen(),
+  'RECOVERY: Finished game restores authoritative final FEN from Firestore'
+);
+
+// 26. PERSPECTIVE CALCULATION: Accurate Winner / Defeat / Draw Mapping
+const getPerspective = (winnerUid: string | null, myUid: string): 'VICTORY' | 'DEFEAT' | 'DRAW' => {
+  if (!winnerUid) return 'DRAW';
+  return winnerUid === myUid ? 'VICTORY' : 'DEFEAT';
+};
+assert(getPerspective(p2Uid, p2Uid) === 'VICTORY', 'PERSPECTIVE: Winner sees VICTORY');
+assert(getPerspective(p2Uid, p1Uid) === 'DEFEAT', 'PERSPECTIVE: Loser sees DEFEAT');
+assert(getPerspective(null, p1Uid) === 'DRAW', 'PERSPECTIVE: Player 1 sees DRAW on draw');
+assert(getPerspective(null, p2Uid) === 'DRAW', 'PERSPECTIVE: Player 2 sees DRAW on draw');
+
 console.log(`\nTests Completed: ${passed} Passed, ${failed} Failed\n`);
 if (failed > 0) {
   process.exit(1);

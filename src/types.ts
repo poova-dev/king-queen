@@ -109,7 +109,8 @@ export type MultiplayerGameStatus =
   | 'CHECK'
   | 'CHECKMATE'
   | 'DRAW'
-  | 'STALEMATE';
+  | 'STALEMATE'
+  | 'FINISHED';
 
 export interface GameMoveRecord {
   from: string;
@@ -146,9 +147,12 @@ export interface GameHistoryPlayer {
 export type GameResult = 'WIN' | 'LOSS' | 'DRAW';
 export type GameEndReason =
   | 'CHECKMATE'
-  | 'RESIGNATION'
   | 'STALEMATE'
+  | 'THREEFOLD_REPETITION'
+  | 'INSUFFICIENT_MATERIAL'
+  | 'FIFTY_MOVE_RULE'
   | 'DRAW'
+  | 'RESIGNATION'
   | 'TIMEOUT'
   | 'ABANDONED';
 
@@ -175,7 +179,16 @@ export interface GameHistoryRecord {
   blackPlayer: GameHistoryPlayer;
   playerUids: string[];
   winnerUid: string | null;
-  result: 'CHECKMATE' | 'RESIGNATION' | 'DRAW' | 'STALEMATE' | 'ABANDONED';
+  result:
+    | 'CHECKMATE'
+    | 'STALEMATE'
+    | 'THREEFOLD_REPETITION'
+    | 'INSUFFICIENT_MATERIAL'
+    | 'FIFTY_MOVE_RULE'
+    | 'DRAW'
+    | 'RESIGNATION'
+    | 'TIMEOUT'
+    | 'ABANDONED';
   totalMoves: number;
   finalFen: string;
   startedAt?: any;
@@ -194,6 +207,8 @@ export interface GameStateDocument {
   moveNumber: number;
   version: number;
   winnerUid: string | null;
+  endReason?: GameEndReason | null;
+  finishedAt?: any;
   statsProcessed?: boolean;
   rematchRequest?: RematchRequestDocument | null;
   rematchCount?: number;

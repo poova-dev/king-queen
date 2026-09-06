@@ -22,6 +22,8 @@ import {
   RoomStatus,
   GameHistoryRecord,
   getOppositeChessSide,
+  GameEndReason,
+  GameResult,
 } from '../types';
 
 export const INITIAL_CHESS_FEN =
@@ -55,6 +57,21 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         return room.gameState;
       }
 
+      // If room is already in a concluded state, do not re-initialize a new game
+      if (
+        room.status === 'FINISHED' ||
+        room.status === 'COMPLETED' ||
+        room.status === 'CLOSED' ||
+        room.status === 'CANCELLED' ||
+        room.status === 'ABANDONED'
+      ) {
+        if (import.meta.env?.DEV) {
+          console.log('[Game] Room already concluded, skipping initialization');
+        }
+        if (room.gameState) return room.gameState;
+        throw new Error('GAME_ALREADY_FINISHED');
+      }
+
       if (import.meta.env?.DEV) {
         console.log('[Game] Creating initial gameState');
       }
@@ -69,6 +86,8 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         moveNumber: 0,
         version: 0,
         winnerUid: null,
+        endReason: null,
+        finishedAt: null,
         statsProcessed: false,
         rematchRequest: null,
         rematchCount: 0,
@@ -87,6 +106,8 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         'gameState.moveNumber': 0,
         'gameState.version': 0,
         'gameState.winnerUid': null,
+        'gameState.endReason': null,
+        'gameState.finishedAt': null,
         'gameState.statsProcessed': false,
         'gameState.rematchRequest': null,
         'gameState.rematchCount': 0,
@@ -166,10 +187,14 @@ export const makeMove = async (
 
     // Verify game is not already over
     if (
+      currentGameState.status === 'FINISHED' ||
       currentGameState.status === 'CHECKMATE' ||
       currentGameState.status === 'DRAW' ||
       currentGameState.status === 'STALEMATE'
     ) {
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Game already finished');
+      }
       throw new Error('GAME_ALREADY_FINISHED');
     }
 
@@ -184,8 +209,21 @@ export const makeMove = async (
       throw new Error('NOT_YOUR_TURN');
     }
 
-    // Instantiate authoritative chess engine from Firestore FEN
-    const chess = new Chess(currentGameState.fen);
+    // Instantiate authoritative chess engine with move history replay for accurate 3-fold repetition detection
+    const chess = new Chess();
+    let replaySuccess = true;
+    if (currentGameState.moveHistory && currentGameState.moveHistory.length > 0) {
+      try {
+        for (const entry of currentGameState.moveHistory) {
+          chess.move(entry.san);
+        }
+      } catch {
+        replaySuccess = false;
+      }
+    }
+    if (!replaySuccess || !currentGameState.moveHistory?.length) {
+      chess.load(currentGameState.fen);
+    }
 
     // Attempt the requested move
     let moveResult = null;
@@ -207,32 +245,80 @@ export const makeMove = async (
     const newFen = chess.fen();
     const nextTurn: ChessSide = chess.turn() === 'w' ? 'WHITE' : 'BLACK';
 
+    if (import.meta.env?.DEV) {
+      console.log('[Game] Evaluating position');
+    }
+
     // Evaluate game status from chess.js
     const isCheckmate = chess.isCheckmate();
     const isStalemate = chess.isStalemate();
+    const isThreefoldRepetition = chess.isThreefoldRepetition();
+    const isInsufficientMaterial = chess.isInsufficientMaterial();
+    const isDrawByFiftyMoves = chess.isDrawByFiftyMoves();
     const isDraw = chess.isDraw();
     const inCheck = chess.inCheck();
 
     let newStatus: MultiplayerGameStatus = 'PLAYING';
     let checkedColor: ChessSide | null = null;
     let winnerUid: string | null = null;
+    let endReason: GameEndReason | null = null;
     let newRoomStatus: RoomStatus = room.status;
 
     if (isCheckmate) {
-      newStatus = 'CHECKMATE';
+      newStatus = 'FINISHED';
+      endReason = 'CHECKMATE';
       winnerUid = playerUid; // Current player delivered checkmate
       newRoomStatus = 'FINISHED';
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Checkmate detected! Winner:', winnerUid);
+      }
     } else if (isStalemate) {
-      newStatus = 'STALEMATE';
+      newStatus = 'FINISHED';
+      endReason = 'STALEMATE';
       winnerUid = null;
       newRoomStatus = 'FINISHED';
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Draw detected: STALEMATE');
+      }
+    } else if (isThreefoldRepetition) {
+      newStatus = 'FINISHED';
+      endReason = 'THREEFOLD_REPETITION';
+      winnerUid = null;
+      newRoomStatus = 'FINISHED';
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Draw detected: THREEFOLD_REPETITION');
+      }
+    } else if (isInsufficientMaterial) {
+      newStatus = 'FINISHED';
+      endReason = 'INSUFFICIENT_MATERIAL';
+      winnerUid = null;
+      newRoomStatus = 'FINISHED';
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Draw detected: INSUFFICIENT_MATERIAL');
+      }
+    } else if (isDrawByFiftyMoves) {
+      newStatus = 'FINISHED';
+      endReason = 'FIFTY_MOVE_RULE';
+      winnerUid = null;
+      newRoomStatus = 'FINISHED';
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Draw detected: FIFTY_MOVE_RULE');
+      }
     } else if (isDraw) {
-      newStatus = 'DRAW';
+      newStatus = 'FINISHED';
+      endReason = 'DRAW';
       winnerUid = null;
       newRoomStatus = 'FINISHED';
+      if (import.meta.env?.DEV) {
+        console.log('[Game] Draw detected: DRAW');
+      }
     } else if (inCheck) {
       newStatus = 'CHECK';
       checkedColor = nextTurn;
+    }
+
+    if (newStatus === 'FINISHED' && import.meta.env?.DEV) {
+      console.log('[Game] Completing game transaction with reason:', endReason);
     }
 
     const lastMoveRecord: GameMoveRecord = {
@@ -268,6 +354,8 @@ export const makeMove = async (
       moveNumber: currentGameState.moveNumber + 1,
       version: currentGameState.version + 1,
       winnerUid,
+      endReason,
+      ...(newStatus === 'FINISHED' ? { finishedAt: serverTimestamp() } : {}),
       updatedAt: serverTimestamp(),
     };
 
@@ -319,21 +407,35 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
     if (!gameState) return;
 
     // Guard: Only process when game is finished and not yet processed
+    if (gameState.statsProcessed) {
+      if (import.meta.env?.DEV) {
+        console.info(`[Game] Stats already processed for room ${roomId}`);
+      }
+      return;
+    }
+
+    if (room.historySaved) {
+      if (import.meta.env?.DEV) {
+        console.info(`[Game] History already exists for room ${roomId}`);
+      }
+      return;
+    }
+
     if (
-      gameState.statsProcessed ||
-      room.historySaved ||
-      (gameState.status !== 'CHECKMATE' &&
-        gameState.status !== 'DRAW' &&
-        gameState.status !== 'STALEMATE')
+      gameState.status !== 'FINISHED' &&
+      gameState.status !== 'CHECKMATE' &&
+      gameState.status !== 'DRAW' &&
+      gameState.status !== 'STALEMATE' &&
+      room.status !== 'FINISHED'
     ) {
       if (import.meta.env?.DEV) {
-        console.info(`[History] Game already saved or not in terminal state for room ${roomId}`);
+        console.info(`[Game] Game not in terminal state for room ${roomId}`);
       }
       return;
     }
 
     if (import.meta.env?.DEV) {
-      console.info(`[History] Saving completed game for room ${roomId}`);
+      console.info(`[Game] Completing game transaction: saving history and stats for room ${roomId}`);
     }
 
     const player1 = room.players[0];
@@ -348,12 +450,13 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
     const gameId = `${roomId}_${rematchNum}`;
     const gameRef = doc(db, 'games', gameId);
 
-    const resultType: 'CHECKMATE' | 'RESIGNATION' | 'DRAW' | 'STALEMATE' =
-      gameState.status === 'CHECKMATE'
+    const reason: GameEndReason =
+      gameState.endReason ||
+      (gameState.status === 'CHECKMATE'
         ? 'CHECKMATE'
         : gameState.status === 'STALEMATE'
         ? 'STALEMATE'
-        : 'DRAW';
+        : 'DRAW');
 
     const historyRecord: GameHistoryRecord = {
       id: gameId,
@@ -372,7 +475,7 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
       },
       playerUids: [whitePlayer.uid, blackPlayer.uid],
       winnerUid: gameState.winnerUid || null,
-      result: resultType,
+      result: reason,
       totalMoves: gameState.moveHistory?.length || gameState.moveNumber || 0,
       finalFen: gameState.fen,
       startedAt: room.createdAt || serverTimestamp(),
@@ -386,9 +489,9 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
     // Save individual history record for Player 1: users/{player1.uid}/gameHistory/{gameId}
     if (player1.uid) {
       const p1HistoryRef = doc(db, 'users', player1.uid, 'gameHistory', gameId);
-      const isP1Winner = gameState.winnerUid === player1.uid;
+      const isP1Winner = Boolean(gameState.winnerUid && gameState.winnerUid === player1.uid);
       const isP1Loser = Boolean(gameState.winnerUid && gameState.winnerUid !== player1.uid);
-      const p1Result = isP1Winner ? 'WIN' : isP1Loser ? 'LOSS' : 'DRAW';
+      const p1Result: GameResult = isP1Winner ? 'WIN' : isP1Loser ? 'LOSS' : 'DRAW';
 
       transaction.set(p1HistoryRef, {
         gameId,
@@ -399,7 +502,7 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
         opponentPhotoURL: player2.photoURL || null,
         playerColor: player1.chessColor || 'WHITE',
         result: p1Result,
-        reason: resultType,
+        reason,
         totalMoves: historyRecord.totalMoves,
         finalFen: historyRecord.finalFen,
         playedAt: serverTimestamp(),
@@ -410,9 +513,9 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
     // Save individual history record for Player 2: users/{player2.uid}/gameHistory/{gameId}
     if (player2.uid) {
       const p2HistoryRef = doc(db, 'users', player2.uid, 'gameHistory', gameId);
-      const isP2Winner = gameState.winnerUid === player2.uid;
+      const isP2Winner = Boolean(gameState.winnerUid && gameState.winnerUid === player2.uid);
       const isP2Loser = Boolean(gameState.winnerUid && gameState.winnerUid !== player2.uid);
-      const p2Result = isP2Winner ? 'WIN' : isP2Loser ? 'LOSS' : 'DRAW';
+      const p2Result: GameResult = isP2Winner ? 'WIN' : isP2Loser ? 'LOSS' : 'DRAW';
 
       transaction.set(p2HistoryRef, {
         gameId,
@@ -423,7 +526,7 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
         opponentPhotoURL: player1.photoURL || null,
         playerColor: player2.chessColor || 'BLACK',
         result: p2Result,
-        reason: resultType,
+        reason,
         totalMoves: historyRecord.totalMoves,
         finalFen: historyRecord.finalFen,
         playedAt: serverTimestamp(),
@@ -437,7 +540,7 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
       const p1Snap = await transaction.get(p1Ref);
       if (p1Snap.exists()) {
         const p1Data = p1Snap.data();
-        const isWinner = gameState.winnerUid === player1.uid;
+        const isWinner = Boolean(gameState.winnerUid && gameState.winnerUid === player1.uid);
         const isLoser = Boolean(gameState.winnerUid && gameState.winnerUid !== player1.uid);
         transaction.update(p1Ref, {
           gamesPlayed: (p1Data.gamesPlayed || 0) + 1,
@@ -454,7 +557,7 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
       const p2Snap = await transaction.get(p2Ref);
       if (p2Snap.exists()) {
         const p2Data = p2Snap.data();
-        const isWinner = gameState.winnerUid === player2.uid;
+        const isWinner = Boolean(gameState.winnerUid && gameState.winnerUid === player2.uid);
         const isLoser = Boolean(gameState.winnerUid && gameState.winnerUid !== player2.uid);
         transaction.update(p2Ref, {
           gamesPlayed: (p2Data.gamesPlayed || 0) + 1,
@@ -474,7 +577,7 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
     });
 
     if (import.meta.env?.DEV) {
-      console.info(`[History] Game history saved & user stats updated for room ${roomId}`);
+      console.info(`[Game] Game history saved & user stats updated for room ${roomId}`);
     }
   });
 };
@@ -577,6 +680,8 @@ export const respondToRematch = async (
       'gameState.moveNumber': 0,
       'gameState.version': 0,
       'gameState.winnerUid': null,
+      'gameState.endReason': null,
+      'gameState.finishedAt': null,
       'gameState.statsProcessed': false,
       'gameState.rematchRequest': null,
       'gameState.rematchCount': (room.gameState.rematchCount || 0) + 1,
