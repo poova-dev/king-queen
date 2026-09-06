@@ -1,13 +1,15 @@
-import { Palette, Shield, Volume2, User, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Palette, Shield, Volume2, User, ChevronRight, ArrowLeft, LogOut } from 'lucide-react';
 import { Avatar, Card } from '../components/UI';
 import { UserProfile } from '../types';
 import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../hooks/useAuth';
 
 interface ProfileScreenProps {
   user: UserProfile;
   onNavigateToAppearance: () => void;
   onEditProfile: () => void;
   onBack: () => void;
+  onLogout?: () => void;
 }
 
 export const ProfileScreen = ({
@@ -15,8 +17,19 @@ export const ProfileScreen = ({
   onNavigateToAppearance,
   onEditProfile,
   onBack,
+  onLogout,
 }: ProfileScreenProps) => {
   const { theme } = useTheme();
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+    onLogout?.();
+  };
 
   return (
     <div className="flex flex-col min-h-screen px-6 py-8 bg-[var(--background)] pb-28">
@@ -70,16 +83,28 @@ export const ProfileScreen = ({
         {/* Quick Stats */}
         <div className="w-full grid grid-cols-3 gap-3 mt-4">
           <div className="flex flex-col items-center p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
-            <span className="text-base font-display font-semibold text-[var(--text)]">0</span>
-            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Wins</span>
+            <span className="text-base font-display font-semibold text-[var(--text)]">
+              {user.gamesPlayed ?? 0}
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] text-center">
+              Games Played
+            </span>
           </div>
           <div className="flex flex-col items-center p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
-            <span className="text-base font-display font-semibold text-[var(--text)]">100%</span>
-            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Honor</span>
+            <span className="text-base font-display font-semibold text-[var(--primary)]">
+              {user.wins ?? 0}
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+              Wins
+            </span>
           </div>
           <div className="flex flex-col items-center p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
-            <span className="text-base font-display font-semibold text-[var(--primary)]">1200</span>
-            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Rating</span>
+            <span className="text-base font-display font-semibold text-[var(--text)]">
+              {user.losses ?? 0}
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+              Losses
+            </span>
           </div>
         </div>
       </div>
@@ -169,6 +194,23 @@ export const ProfileScreen = ({
           <span className="text-[10px] font-bold tracking-wider px-2 py-1 rounded bg-[var(--surface-light)] text-green-400 border border-[var(--border)]">
             VERIFIED
           </span>
+        </Card>
+
+        {/* Sign Out */}
+        <Card
+          onClick={handleLogout}
+          className="flex items-center justify-between p-4 group hover:border-red-500/40 transition-colors"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 group-hover:scale-105 transition-transform">
+              <LogOut className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-red-400">Sign Out</span>
+              <span className="text-xs text-[var(--text-muted)]">End your royal session</span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-red-400/50 group-hover:text-red-400 transition-colors" />
         </Card>
       </div>
     </div>
