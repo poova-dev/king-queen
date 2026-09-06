@@ -1,16 +1,57 @@
-import { Settings, Plus, LogIn, Globe } from 'lucide-react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect } from 'react';
+import { Settings, Plus, LogIn, Globe, ArrowRight, History } from 'lucide-react';
 import { Button, Card, Avatar } from '../components/UI';
-import { UserProfile } from '../types';
+import { UserProfile, GameHistoryRecord } from '../types';
+import { fetchUserGameHistory } from '../services/gameService';
 
 interface HomeDashboardProps {
   user: UserProfile;
   onCreateRoom: () => void;
   onJoinRoom: () => void;
   onSettings: () => void;
+  onViewHistory?: () => void;
 }
 
-export const HomeDashboard = ({ user, onCreateRoom, onJoinRoom, onSettings }: HomeDashboardProps) => {
+export const HomeDashboard = ({
+  user,
+  onCreateRoom,
+  onJoinRoom,
+  onSettings,
+  onViewHistory,
+}: HomeDashboardProps) => {
+  const [recentBattles, setRecentBattles] = useState<GameHistoryRecord[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (user.uid) {
+      fetchUserGameHistory(user.uid, 3).then((games) => {
+        if (isMounted) {
+          setRecentBattles(games);
+        }
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [user.uid]);
+
+  const formatRelativeDate = (timestamp: any): string => {
+    if (!timestamp) return 'Today';
+    const date = timestamp?.toDate
+      ? timestamp.toDate()
+      : typeof timestamp === 'number'
+      ? new Date(timestamp)
+      : new Date();
+
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
   return (
     <div className="flex flex-col min-h-screen px-6 py-8 bg-[var(--background)] pb-28">
       {/* Header */}
@@ -41,14 +82,14 @@ export const HomeDashboard = ({ user, onCreateRoom, onJoinRoom, onSettings }: Ho
       </header>
 
       {/* Hero */}
-      <div className="flex flex-col gap-2 mb-10">
+      <div className="flex flex-col gap-2 mb-8">
         <p className="text-[var(--text-muted)] font-medium">Welcome back, {user.displayName}</p>
         <h1 className="text-3xl font-display leading-tight">Ready for your next move?</h1>
         <p className="text-sm text-[var(--text-muted)] mt-1">Challenge your partner to a match of hearts and minds.</p>
       </div>
 
       {/* Main Actions */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 mb-8">
         <Card onClick={onCreateRoom} className="relative overflow-hidden group">
           <div className="relative z-10 flex flex-col gap-4">
             <div className="w-12 h-12 rounded-xl bg-[var(--primary)]/10 flex items-center justify-center text-[var(--primary)]">
@@ -81,27 +122,79 @@ export const HomeDashboard = ({ user, onCreateRoom, onJoinRoom, onSettings }: Ho
              <span className="text-8xl">♕</span>
           </div>
         </Card>
-
-        {/* Future Feature */}
-        <Card className="opacity-60 cursor-default border-dashed">
-          <div className="flex flex-col gap-4">
-             <div className="flex justify-between items-start">
-                <div className="w-10 h-10 rounded-xl bg-[var(--surface-light)] flex items-center justify-center text-[var(--text-muted)]">
-                  <Globe className="w-5 h-5" />
-                </div>
-                <span className="px-3 py-1 rounded-full bg-[var(--surface-light)] text-[10px] font-bold text-[var(--primary)] tracking-widest border border-[var(--border)]">
-                  COMING SOON
-                </span>
-             </div>
-             <div className="flex flex-col gap-1">
-                <h3 className="text-lg font-display text-[var(--text-muted)]">ONLINE MULTIPLAYER</h3>
-                <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                  Random matches, online players and global competition in future updates.
-                </p>
-             </div>
-          </div>
-        </Card>
       </div>
+
+      {/* RECENT BATTLES SECTION */}
+      {recentBattles.length > 0 && (
+        <div className="flex flex-col gap-3 mb-8">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold tracking-widest text-[var(--text-muted)] uppercase flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5 text-[var(--primary)]" />
+              Recent Battles
+            </span>
+            {onViewHistory && (
+              <button
+                onClick={onViewHistory}
+                className="text-[11px] font-bold text-[var(--primary)] hover:underline tracking-wide uppercase flex items-center gap-1"
+              >
+                VIEW ALL HISTORY <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {recentBattles.map((game) => {
+              const isWin = user.uid && game.winnerUid === user.uid;
+              const isLoss = user.uid && game.winnerUid && game.winnerUid !== user.uid;
+              const opponent = user.uid === game.whitePlayer.uid ? game.blackPlayer : game.whitePlayer;
+
+              return (
+                <div
+                  key={game.id}
+                  onClick={onViewHistory}
+                  className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--primary)]/40 transition-colors flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="text-lg">
+                      {isWin ? '♔' : isLoss ? '♚' : '⚖️'}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-[var(--text)]">
+                        {isWin ? 'Victory' : isLoss ? 'Defeat' : 'Draw'} vs {opponent.displayName}
+                      </span>
+                      <span className="text-[10px] text-[var(--text-muted)]">
+                        {formatRelativeDate(game.completedAt || game.createdAt)} • {game.result} • {game.totalMoves} Moves
+                      </span>
+                    </div>
+                  </div>
+
+                  <ArrowRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Future Feature */}
+      <Card className="opacity-60 cursor-default border-dashed">
+        <div className="flex flex-col gap-4">
+           <div className="flex justify-between items-start">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-light)] flex items-center justify-center text-[var(--text-muted)]">
+                <Globe className="w-5 h-5" />
+              </div>
+              <span className="px-3 py-1 rounded-full bg-[var(--surface-light)] text-[10px] font-bold text-[var(--primary)] tracking-widest border border-[var(--border)]">
+                COMING SOON
+              </span>
+           </div>
+           <div className="flex flex-col gap-1">
+              <h3 className="text-lg font-display text-[var(--text-muted)]">ONLINE MULTIPLAYER</h3>
+              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                Random matches, online players and global competition in future updates.
+              </p>
+           </div>
+        </div>
+      </Card>
     </div>
   );
 };

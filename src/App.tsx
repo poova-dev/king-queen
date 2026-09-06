@@ -11,6 +11,7 @@ import { JoinRoomScreen } from './screens/JoinRoomScreen';
 import { WaitingRoomScreen } from './screens/WaitingRoomScreen';
 import { GamePreviewScreen } from './screens/GamePreviewScreen';
 import { ChessGameScreen } from './screens/ChessGameScreen';
+import { GameHistoryScreen } from './screens/GameHistoryScreen';
 import { AuthPage } from './pages/AuthPage';
 import { ScreenTransition } from './components/UI';
 import { BottomNavigation } from './components/BottomNavigation';
@@ -49,6 +50,7 @@ function MainApp() {
       'WAITING_ROOM',
       'GAME_PREVIEW',
       'CHESS_GAME',
+      'GAME_HISTORY',
     ];
 
     // 1. Unauthenticated users cannot access protected screens or profile setup
@@ -87,10 +89,11 @@ function MainApp() {
   ]);
 
   // Active Room Lifecycle Synchronization (handles page refresh & real-time room phase changes)
+  // Strict rule: Only actively ongoing PLAYING games route to CHESS_GAME. Finished/completed rooms do not.
   useEffect(() => {
     if (!isAuthenticated || !profileExists || !currentRoom) return;
 
-    if (currentRoom.status === 'PLAYING' || currentRoom.status === 'FINISHED') {
+    if (currentRoom.status === 'PLAYING') {
       if (currentScreen !== 'CHESS_GAME') {
         setCurrentScreen('CHESS_GAME');
       }
@@ -100,7 +103,10 @@ function MainApp() {
       if (['SPLASH', 'HOME', 'CREATE_ROOM', 'JOIN_ROOM'].includes(currentScreen)) {
         setCurrentScreen('WAITING_ROOM');
       }
-    } else if (currentRoom.status === 'CANCELLED') {
+    } else if (
+      currentRoom.status === 'CANCELLED' ||
+      currentRoom.status === 'CLOSED'
+    ) {
       if (currentScreen === 'WAITING_ROOM' || currentScreen === 'CHESS_GAME') {
         setCurrentScreen('HOME');
       }
@@ -112,7 +118,7 @@ function MainApp() {
       if (profileExists) {
         if (currentRoom && ['WAITING', 'COIN_TOSS', 'COLOR_SELECTION', 'READY'].includes(currentRoom.status)) {
           setCurrentScreen('WAITING_ROOM');
-        } else if (currentRoom && ['PLAYING', 'FINISHED'].includes(currentRoom.status)) {
+        } else if (currentRoom && currentRoom.status === 'PLAYING') {
           setCurrentScreen('CHESS_GAME');
         } else {
           setCurrentScreen('HOME');
@@ -213,7 +219,7 @@ function MainApp() {
     );
   }
 
-  const showNav = ['HOME', 'PROFILE'].includes(currentScreen);
+  const showNav = ['HOME', 'PROFILE', 'GAME_HISTORY'].includes(currentScreen);
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--text)] font-sans relative">
@@ -256,6 +262,26 @@ function MainApp() {
             onCreateRoom={() => setCurrentScreen('CREATE_ROOM')}
             onJoinRoom={() => setCurrentScreen('JOIN_ROOM')}
             onSettings={() => navigateToAppearance('HOME')}
+            onViewHistory={() => {
+              setActiveTab('history');
+              setCurrentScreen('GAME_HISTORY');
+            }}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'GAME_HISTORY'}>
+        {userProfile && (
+          <GameHistoryScreen
+            user={userProfile}
+            onBack={() => {
+              setActiveTab('home');
+              setCurrentScreen('HOME');
+            }}
+            onStartGame={() => {
+              setActiveTab('home');
+              setCurrentScreen('CREATE_ROOM');
+            }}
           />
         )}
       </ScreenTransition>
@@ -355,6 +381,8 @@ function MainApp() {
               setCurrentScreen('PROFILE');
             } else if (tab === 'home') {
               setCurrentScreen('HOME');
+            } else if (tab === 'history') {
+              setCurrentScreen('GAME_HISTORY');
             }
           }} 
         />

@@ -28,7 +28,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   room,
   onExit,
 }) => {
-  const { currentRoom, leaveRoom } = useRoom();
+  const { currentRoom, leaveRoom, leaveCompletedGame } = useRoom();
   const isMultiplayer = Boolean(currentRoom);
 
   // Fallback local engine (active when offline / local pass-and-play)
@@ -183,7 +183,17 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     }
   };
 
-  const handleExitGame = async () => {
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
+
+  const handleExitGame = () => {
+    if (isGameOver || resignedBy !== null) {
+      setIsExitConfirmOpen(true);
+    } else {
+      performImmediateExit();
+    }
+  };
+
+  const performImmediateExit = async () => {
     if (isMultiplayer) {
       if (isRematchRequestedByOpponent) {
         multiChess.respondToRematch(false).catch(() => {});
@@ -192,6 +202,21 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         await leaveRoom();
       } catch (err) {
         console.warn('[leaveRoom Error]', err);
+      }
+    }
+    onExit();
+  };
+
+  const confirmLeaveCompleted = async () => {
+    setIsExitConfirmOpen(false);
+    if (isMultiplayer) {
+      if (isRematchRequestedByOpponent) {
+        multiChess.respondToRematch(false).catch(() => {});
+      }
+      try {
+        await leaveCompletedGame();
+      } catch (err) {
+        console.warn('[leaveCompletedGame Error]', err);
       }
     }
     onExit();
@@ -431,6 +456,39 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         onViewGame={() => setIsGameOverDismissed(true)}
         onExit={handleExitGame}
       />
+
+      {/* LEAVE THE BATTLEFIELD CONFIRMATION MODAL */}
+      {isExitConfirmOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="w-full max-w-xs rounded-3xl bg-[var(--surface)] border border-[var(--primary)]/40 p-6 flex flex-col items-center text-center gap-4 shadow-[0_0_50px_rgba(0,0,0,0.9)] animate-in fade-in zoom-in duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-[var(--surface-light)] border border-[var(--primary)]/30 flex items-center justify-center text-2xl text-[var(--primary)]">
+              🏰
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-lg font-display text-[var(--text)] tracking-wider">
+                LEAVE THE BATTLEFIELD?
+              </h3>
+              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                The battle will remain in your royal history.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 w-full mt-2">
+              <button
+                onClick={confirmLeaveCompleted}
+                className="w-full py-3 rounded-xl bg-[var(--primary)] text-[var(--background)] font-bold text-xs tracking-wider uppercase shadow-md hover:opacity-90 transition-opacity"
+              >
+                RETURN TO KINGDOM
+              </button>
+              <button
+                onClick={() => setIsExitConfirmOpen(false)}
+                className="w-full py-2.5 rounded-xl border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] text-xs font-medium tracking-wide transition-colors"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
