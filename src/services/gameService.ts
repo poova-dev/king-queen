@@ -3,6 +3,12 @@ import {
   getDoc,
   runTransaction,
   serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+  limit,
+  orderBy,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Chess } from 'chess.js';
@@ -14,6 +20,7 @@ import {
   MultiplayerGameStatus,
   ChessSide,
   RoomStatus,
+  GameHistoryRecord,
   getOppositeChessSide,
 } from '../types';
 
@@ -275,10 +282,32 @@ export const makeMove = async (
 };
 
 /**
- * Transaction-safe stats update when match concludes.
- * Increment stats exactly once per room game.
+ * Rematch expiration timeout (5 minutes)
  */
-export const processGameStats = async (roomId: string): Promise<void> => {
+export const REMATCH_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Checks if a pending rematch request has expired
+ */
+export const isRematchExpired = (requestedAt?: any): boolean => {
+  if (!requestedAt) return false;
+  const time =
+    typeof requestedAt === 'number'
+      ? requestedAt
+      : requestedAt?.toMillis
+      ? requestedAt.toMillis()
+      : typeof requestedAt === 'string'
+      ? new Date(requestedAt).getTime()
+      : 0;
+  if (!time) return false;
+  return Date.now() - time > REMATCH_REQUEST_TIMEOUT_MS;
+};
+
+/**
+ * Transaction-safe stats and history creation when match concludes.
+ * Idempotent: creates history record in `games/{gameId}` and increments user stats exactly once.
+ */
+export const processGameStatsAndHistory = async (roomId: string): Promise<void> => {
   const roomRef = doc(db, 'rooms', roomId);
 
   await runTransaction(db, async (transaction) => {
@@ -289,26 +318,79 @@ export const processGameStats = async (roomId: string): Promise<void> => {
     const gameState = room.gameState;
     if (!gameState) return;
 
-    // Only process when game is finished and not yet processed
+    // Guard: Only process when game is finished and not yet processed
     if (
       gameState.statsProcessed ||
+      room.historySaved ||
       (gameState.status !== 'CHECKMATE' &&
         gameState.status !== 'DRAW' &&
         gameState.status !== 'STALEMATE')
     ) {
+      if (import.meta.env?.DEV) {
+        console.info(`[History] Game already saved or not in terminal state for room ${roomId}`);
+      }
       return;
+    }
+
+    if (import.meta.env?.DEV) {
+      console.info(`[History] Saving completed game for room ${roomId}`);
     }
 
     const player1 = room.players[0];
     const player2 = room.players[1];
 
-    if (player1?.uid) {
+    if (!player1 || !player2) return;
+
+    const whitePlayer = player1.chessColor === 'WHITE' ? player1 : player2;
+    const blackPlayer = player1.chessColor === 'BLACK' ? player1 : player2;
+
+    const rematchNum = gameState.rematchCount || 0;
+    const gameId = `${roomId}_${rematchNum}`;
+    const gameRef = doc(db, 'games', gameId);
+
+    const resultType: 'CHECKMATE' | 'RESIGNATION' | 'DRAW' | 'STALEMATE' =
+      gameState.status === 'CHECKMATE'
+        ? 'CHECKMATE'
+        : gameState.status === 'STALEMATE'
+        ? 'STALEMATE'
+        : 'DRAW';
+
+    const historyRecord: GameHistoryRecord = {
+      id: gameId,
+      roomId,
+      whitePlayer: {
+        uid: whitePlayer.uid,
+        displayName: whitePlayer.displayName,
+        photoURL: whitePlayer.photoURL,
+        identity: whitePlayer.profileIdentity,
+      },
+      blackPlayer: {
+        uid: blackPlayer.uid,
+        displayName: blackPlayer.displayName,
+        photoURL: blackPlayer.photoURL,
+        identity: blackPlayer.profileIdentity,
+      },
+      playerUids: [whitePlayer.uid, blackPlayer.uid],
+      winnerUid: gameState.winnerUid || null,
+      result: resultType,
+      totalMoves: gameState.moveHistory?.length || gameState.moveNumber || 0,
+      finalFen: gameState.fen,
+      startedAt: room.createdAt || serverTimestamp(),
+      completedAt: serverTimestamp(),
+      rematchNumber: rematchNum,
+      createdAt: serverTimestamp(),
+    };
+
+    transaction.set(gameRef, historyRecord);
+
+    // Update Player 1 stats
+    if (player1.uid) {
       const p1Ref = doc(db, 'users', player1.uid);
       const p1Snap = await transaction.get(p1Ref);
       if (p1Snap.exists()) {
         const p1Data = p1Snap.data();
         const isWinner = gameState.winnerUid === player1.uid;
-        const isLoser = gameState.winnerUid && gameState.winnerUid !== player1.uid;
+        const isLoser = Boolean(gameState.winnerUid && gameState.winnerUid !== player1.uid);
         transaction.update(p1Ref, {
           gamesPlayed: (p1Data.gamesPlayed || 0) + 1,
           wins: isWinner ? (p1Data.wins || 0) + 1 : p1Data.wins || 0,
@@ -318,13 +400,14 @@ export const processGameStats = async (roomId: string): Promise<void> => {
       }
     }
 
-    if (player2?.uid) {
+    // Update Player 2 stats
+    if (player2.uid) {
       const p2Ref = doc(db, 'users', player2.uid);
       const p2Snap = await transaction.get(p2Ref);
       if (p2Snap.exists()) {
         const p2Data = p2Snap.data();
         const isWinner = gameState.winnerUid === player2.uid;
-        const isLoser = gameState.winnerUid && gameState.winnerUid !== player2.uid;
+        const isLoser = Boolean(gameState.winnerUid && gameState.winnerUid !== player2.uid);
         transaction.update(p2Ref, {
           gamesPlayed: (p2Data.gamesPlayed || 0) + 1,
           wins: isWinner ? (p2Data.wins || 0) + 1 : p2Data.wins || 0,
@@ -334,16 +417,28 @@ export const processGameStats = async (roomId: string): Promise<void> => {
       }
     }
 
-    // Mark statsProcessed
+    // Mark room historySaved and statsProcessed
     transaction.update(roomRef, {
       'gameState.statsProcessed': true,
+      historySaved: true,
+      status: 'FINISHED',
       updatedAt: serverTimestamp(),
     });
+
+    if (import.meta.env?.DEV) {
+      console.info(`[History] Game history saved & user stats updated for room ${roomId}`);
+    }
   });
 };
 
 /**
- * Request a rematch from opponent
+ * Backward compatibility alias for processGameStatsAndHistory
+ */
+export const processGameStats = processGameStatsAndHistory;
+
+/**
+ * Request a rematch from opponent.
+ * Includes timestamp for safe expiration.
  */
 export const requestRematch = async (roomId: string, uid: string): Promise<void> => {
   const roomRef = doc(db, 'rooms', roomId);
@@ -352,11 +447,17 @@ export const requestRematch = async (roomId: string, uid: string): Promise<void>
     const roomSnap = await transaction.get(roomRef);
     if (!roomSnap.exists()) return;
 
+    if (import.meta.env?.DEV) {
+      console.info(`[Rematch] Request received from ${uid} in room ${roomId}`);
+    }
+
     transaction.update(roomRef, {
       'gameState.rematchRequest': {
         requestedBy: uid,
+        requestedAt: Date.now(),
         status: 'PENDING',
       },
+      status: 'REMATCH_PENDING',
       updatedAt: serverTimestamp(),
     });
   });
@@ -365,6 +466,7 @@ export const requestRematch = async (roomId: string, uid: string): Promise<void>
 /**
  * Respond to a rematch request.
  * If accepted, automatically swaps chess colors (WHITE <-> BLACK) and resets gameState.
+ * If declined or expired, updates status and keeps room finished.
  */
 export const respondToRematch = async (
   roomId: string,
@@ -380,12 +482,33 @@ export const respondToRematch = async (
     const room = roomSnap.data() as RoomDocument;
     if (!room.gameState) return;
 
-    if (!accept) {
+    // Check expiration
+    if (isRematchExpired(room.gameState.rematchRequest?.requestedAt)) {
+      if (import.meta.env?.DEV) {
+        console.info(`[Rematch] Request expired in room ${roomId}`);
+      }
       transaction.update(roomRef, {
-        'gameState.rematchRequest.status': 'DECLINED',
+        'gameState.rematchRequest.status': 'EXPIRED',
+        status: 'COMPLETED',
         updatedAt: serverTimestamp(),
       });
       return;
+    }
+
+    if (!accept) {
+      if (import.meta.env?.DEV) {
+        console.info(`[Rematch] Request declined in room ${roomId}`);
+      }
+      transaction.update(roomRef, {
+        'gameState.rematchRequest.status': 'DECLINED',
+        status: 'COMPLETED',
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    if (import.meta.env?.DEV) {
+      console.info(`[Rematch] Request accepted in room ${roomId}`);
     }
 
     // Swap chess colors between Player 1 and Player 2
@@ -394,22 +517,6 @@ export const respondToRematch = async (
       chessColor: p.chessColor ? getOppositeChessSide(p.chessColor) : null,
       ready: true,
     }));
-
-    const resetGameState: GameStateDocument = {
-      fen: INITIAL_CHESS_FEN,
-      turn: 'WHITE',
-      status: 'PLAYING',
-      checkedColor: null,
-      lastMove: null,
-      moveHistory: [],
-      moveNumber: 0,
-      version: 0,
-      winnerUid: null,
-      statsProcessed: false,
-      rematchRequest: null,
-      rematchCount: (room.gameState.rematchCount || 0) + 1,
-      updatedAt: serverTimestamp(),
-    };
 
     transaction.update(roomRef, {
       players: updatedPlayers,
@@ -426,10 +533,78 @@ export const respondToRematch = async (
       'gameState.rematchRequest': null,
       'gameState.rematchCount': (room.gameState.rematchCount || 0) + 1,
       'gameState.updatedAt': serverTimestamp(),
+      historySaved: false,
       status: 'PLAYING',
       updatedAt: serverTimestamp(),
     });
   });
+};
+
+/**
+ * Query persistent game history for a user with in-memory sort fallback
+ */
+export const fetchUserGameHistory = async (
+  uid: string,
+  limitCount = 20
+): Promise<GameHistoryRecord[]> => {
+  if (!uid) return [];
+
+  try {
+    const q = query(
+      collection(db, 'games'),
+      where('playerUids', 'array-contains', uid),
+      orderBy('completedAt', 'desc'),
+      limit(limitCount)
+    );
+    const snapshot = await getDocs(q);
+    const games = snapshot.docs.map((docSnap) => ({
+      ...docSnap.data(),
+      id: docSnap.id,
+    })) as GameHistoryRecord[];
+
+    if (import.meta.env?.DEV) {
+      console.info(`[History] Loaded ${games.length} games for user ${uid}`);
+    }
+    return games;
+  } catch (err: any) {
+    // Fallback if composite index on completedAt is not yet created
+    try {
+      const fallbackQ = query(
+        collection(db, 'games'),
+        where('playerUids', 'array-contains', uid),
+        limit(limitCount)
+      );
+      const fallbackSnap = await getDocs(fallbackQ);
+      const records = fallbackSnap.docs.map((docSnap) => ({
+        ...docSnap.data(),
+        id: docSnap.id,
+      })) as GameHistoryRecord[];
+
+      records.sort((a, b) => {
+        const timeA = a.completedAt?.toMillis
+          ? a.completedAt.toMillis()
+          : a.createdAt?.toMillis
+          ? a.createdAt.toMillis()
+          : 0;
+        const timeB = b.completedAt?.toMillis
+          ? b.completedAt.toMillis()
+          : b.createdAt?.toMillis
+          ? b.createdAt.toMillis()
+          : 0;
+        return timeB - timeA;
+      });
+
+      if (import.meta.env?.DEV) {
+        console.info(`[History] Loaded ${records.length} games (fallback) for user ${uid}`);
+      }
+      return records;
+    } catch (fallbackErr) {
+      if (import.meta.env?.DEV) {
+        console.warn('[fetchUserGameHistory Error]', fallbackErr);
+      }
+      return [];
+    }
+  }
 };
 
 /**

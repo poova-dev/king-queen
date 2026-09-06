@@ -583,9 +583,56 @@ export const setPlayerReady = async (roomId: string, uid: string): Promise<void>
 };
 
 /**
+ * Dedicated function called when a player leaves a completed match.
+ * Responsibilities:
+ * 1. Mark player as exited in Firestore (exitedPlayers)
+ * 2. If both players have exited or if room is COMPLETED, transition status to 'CLOSED'
+ * 3. Clear/cancel any pending rematch requests so opponent is not stuck
+ * 4. Update updatedAt serverTimestamp
+ */
+export const leaveCompletedGame = async (roomId: string, uid: string): Promise<void> => {
+  const roomRef = doc(db, 'rooms', roomId);
+
+  if (import.meta.env?.DEV) {
+    console.info(`[Room] Leaving completed game ${roomId} for user ${uid}`);
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) return;
+
+    const room = roomSnap.data() as RoomDocument;
+    const currentExited = room.exitedPlayers || [];
+    const updatedExited = currentExited.includes(uid) ? currentExited : [...currentExited, uid];
+
+    // Check if both players have now exited
+    const playerUids = room.players.map((p) => p.uid);
+    const bothExited = playerUids.every((pUid) => updatedExited.includes(pUid));
+
+    const updatePayload: Record<string, any> = {
+      exitedPlayers: updatedExited,
+      updatedAt: serverTimestamp(),
+    };
+
+    // If opponent had a pending rematch request, or current user requested one,
+    // mark the rematch request as DECLINED if this user leaves
+    if (room.gameState?.rematchRequest?.status === 'PENDING') {
+      updatePayload['gameState.rematchRequest.status'] = 'DECLINED';
+    }
+
+    if (bothExited || room.status === 'FINISHED' || room.status === 'COMPLETED') {
+      updatePayload['status'] = bothExited ? 'CLOSED' : 'COMPLETED';
+    }
+
+    transaction.update(roomRef, updatePayload);
+  });
+};
+
+/**
  * Leave Room
  * - If creator leaves during lobby stages: status = 'CANCELLED'
  * - If partner leaves: partner removed, toss/color state reset, room status returns to 'WAITING'
+ * - If game is FINISHED or COMPLETED: records player exit and transitions room towards CLOSED
  */
 export const leaveRoom = async (roomId: string, uid: string): Promise<void> => {
   const roomRef = doc(db, 'rooms', roomId);
@@ -595,7 +642,26 @@ export const leaveRoom = async (roomId: string, uid: string): Promise<void> => {
     if (!roomSnap.exists()) return;
 
     const room = roomSnap.data() as RoomDocument;
-    if (room.status === 'CANCELLED' || room.status === 'FINISHED') return;
+    if (room.status === 'CANCELLED' || room.status === 'CLOSED') return;
+
+    // Handle completed / finished room exit
+    if (room.status === 'FINISHED' || room.status === 'COMPLETED') {
+      const currentExited = room.exitedPlayers || [];
+      const updatedExited = currentExited.includes(uid) ? currentExited : [...currentExited, uid];
+      const playerUids = room.players.map((p) => p.uid);
+      const bothExited = playerUids.every((pUid) => updatedExited.includes(pUid));
+
+      const updatePayload: Record<string, any> = {
+        exitedPlayers: updatedExited,
+        status: bothExited ? 'CLOSED' : 'COMPLETED',
+        updatedAt: serverTimestamp(),
+      };
+      if (room.gameState?.rematchRequest?.status === 'PENDING') {
+        updatePayload['gameState.rematchRequest.status'] = 'DECLINED';
+      }
+      transaction.update(roomRef, updatePayload);
+      return;
+    }
 
     const isCreator = room.createdBy === uid;
     const isPartner = room.players[1]?.uid === uid;
@@ -628,7 +694,22 @@ export const leaveRoom = async (roomId: string, uid: string): Promise<void> => {
 };
 
 /**
- * Recovers active room for authenticated user on browser refresh
+ * Valid statuses that qualify a room as active and restorable.
+ * Completed, finished, closed, cancelled, and abandoned rooms are strictly excluded.
+ */
+export const ACTIVE_ROOM_STATUSES: RoomStatus[] = [
+  'WAITING',
+  'COIN_TOSS',
+  'COLOR_SELECTION',
+  'READY',
+  'PLAYING',
+  'REMATCH_PENDING',
+  'REMATCH_READY',
+];
+
+/**
+ * Recovers active room for authenticated user on browser refresh.
+ * Only restores actively ongoing matches — never completed or closed games.
  */
 export const findActiveRoomForUser = async (
   uid: string,
@@ -641,9 +722,12 @@ export const findActiveRoomForUser = async (
     const room = await getRoom(preferredRoomId);
     if (
       room &&
-      ['WAITING', 'COIN_TOSS', 'COLOR_SELECTION', 'READY', 'PLAYING', 'FINISHED'].includes(room.status) &&
+      ACTIVE_ROOM_STATUSES.includes(room.status) &&
       room.players.some((p) => p.uid === uid)
     ) {
+      if (import.meta.env?.DEV) {
+        console.info(`[Room] Restoring active room ${preferredRoomId} for user ${uid}`);
+      }
       return room;
     }
   }
@@ -652,12 +736,15 @@ export const findActiveRoomForUser = async (
   try {
     const q = query(
       collection(db, 'rooms'),
-      where('status', 'in', ['WAITING', 'COIN_TOSS', 'COLOR_SELECTION', 'READY', 'PLAYING', 'FINISHED'])
+      where('status', 'in', ['WAITING', 'COIN_TOSS', 'COLOR_SELECTION', 'READY', 'PLAYING'])
     );
     const snapshot = await getDocs(q);
     for (const docSnap of snapshot.docs) {
       const room = docSnap.data() as RoomDocument;
       if (room.players.some((p) => p.uid === uid)) {
+        if (import.meta.env?.DEV) {
+          console.info(`[Room] Restoring active room ${docSnap.id} from query for user ${uid}`);
+        }
         return {
           ...room,
           roomId: docSnap.id,

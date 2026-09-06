@@ -17,6 +17,7 @@ import {
   respondToRematch as apiRespondToRematch,
   mapGameError,
   INITIAL_CHESS_FEN,
+  isRematchExpired,
 } from '../services/gameService';
 
 export interface UseMultiplayerChessProps {
@@ -443,7 +444,10 @@ export const useMultiplayerChess = ({
     pendingPromotion,
     isSubmittingMove,
     moveError,
-    rematchRequest: gameState?.rematchRequest || null,
+    rematchRequest:
+      gameState?.rematchRequest && !isRematchExpired(gameState.rematchRequest.requestedAt)
+        ? gameState.rematchRequest
+        : null,
     rematchCount: gameState?.rematchCount || 0,
     handleSquareClick,
     completePromotion,

@@ -24,6 +24,7 @@ import {
   assignChessColors as apiAssignChessColors,
   setPlayerReady as apiSetPlayerReady,
   leaveRoom as apiLeaveRoom,
+  leaveCompletedGame as apiLeaveCompletedGame,
   findActiveRoomForUser,
   mapCreateRoomError,
   mapJoinRoomError,
@@ -45,6 +46,7 @@ export interface RoomContextType {
   createRoom: (settings?: { timer?: string; truthOrDare?: boolean }) => Promise<RoomDocument>;
   joinRoom: (code: string) => Promise<RoomDocument>;
   leaveRoom: () => Promise<void>;
+  leaveCompletedGame: () => Promise<void>;
   setTossChoice: (choice: CoinTossChoice) => Promise<void>;
   flipCoin: () => Promise<void>;
   selectChessColor: (color: ChessSide) => Promise<void>;
@@ -85,12 +87,14 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setCurrentRoom(updatedRoom);
           setRoomError(null);
 
-          // If room was cancelled, clean up stored ID
-          if (updatedRoom.status === 'CANCELLED') {
-            try {
-              localStorage.removeItem(ACTIVE_ROOM_KEY);
-            } catch {
-              // Storage restricted
+          // If room was cancelled or closed, clean up stored ID
+          if (['CANCELLED', 'CLOSED', 'COMPLETED', 'FINISHED'].includes(updatedRoom.status)) {
+            if (updatedRoom.status === 'CANCELLED' || updatedRoom.status === 'CLOSED') {
+              try {
+                localStorage.removeItem(ACTIVE_ROOM_KEY);
+              } catch {
+                // Storage restricted
+              }
             }
           }
         },
@@ -135,9 +139,21 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       try {
         const activeRoom = await findActiveRoomForUser(authUser.uid, savedRoomId);
-        if (isMounted && activeRoom) {
-          setCurrentRoom(activeRoom);
-          attachRoomListener(activeRoom.roomId);
+        if (isMounted) {
+          if (activeRoom) {
+            setCurrentRoom(activeRoom);
+            attachRoomListener(activeRoom.roomId);
+          } else if (savedRoomId) {
+            // Stale or completed room in storage: purge it immediately
+            if (import.meta.env?.DEV) {
+              console.info('[Room] Clearing completed/stale room from storage');
+            }
+            try {
+              localStorage.removeItem(ACTIVE_ROOM_KEY);
+            } catch {
+              // Storage restricted
+            }
+          }
         }
       } catch (err) {
         if (import.meta.env?.DEV) {
@@ -155,7 +171,7 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [authUser?.uid, authLoading, attachRoomListener, cleanupSubscription]);
 
   // Derived presence states
-  const isInRoom = currentRoom !== null && currentRoom.status !== 'CANCELLED';
+  const isInRoom = currentRoom !== null && currentRoom.status !== 'CANCELLED' && currentRoom.status !== 'CLOSED';
   const isCreator = Boolean(
     authUser?.uid && currentRoom && currentRoom.createdBy === authUser.uid
   );
@@ -276,6 +292,31 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const leaveCompletedGameAction = async (): Promise<void> => {
+    const roomId = currentRoom?.roomId;
+    if (import.meta.env?.DEV) {
+      console.info(`[Room] Leaving completed game for room ${roomId}`);
+    }
+
+    cleanupSubscription();
+    setCurrentRoom(null);
+    try {
+      localStorage.removeItem(ACTIVE_ROOM_KEY);
+    } catch {
+      // Storage restricted
+    }
+
+    if (roomId && authUser?.uid) {
+      try {
+        await apiLeaveCompletedGame(roomId, authUser.uid);
+      } catch (err) {
+        if (import.meta.env?.DEV) {
+          console.warn('[leaveCompletedGame error]', err);
+        }
+      }
+    }
+  };
+
   const setTossChoiceAction = async (choice: CoinTossChoice): Promise<void> => {
     if (!currentRoom || !authUser?.uid) return;
     setRoomLoading(true);
@@ -356,6 +397,7 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         createRoom: createRoomAction,
         joinRoom: joinRoomAction,
         leaveRoom: leaveRoomAction,
+        leaveCompletedGame: leaveCompletedGameAction,
         setTossChoice: setTossChoiceAction,
         flipCoin: flipCoinAction,
         selectChessColor: selectChessColorAction,

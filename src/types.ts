@@ -73,7 +73,8 @@ export type Screen =
   | 'JOIN_ROOM'
   | 'WAITING_ROOM'
   | 'GAME_PREVIEW'
-  | 'CHESS_GAME';
+  | 'CHESS_GAME'
+  | 'GAME_HISTORY';
 
 export type RoomStatus =
   | 'WAITING'
@@ -82,7 +83,12 @@ export type RoomStatus =
   | 'READY'
   | 'PLAYING'
   | 'FINISHED'
-  | 'CANCELLED';
+  | 'COMPLETED'
+  | 'REMATCH_PENDING'
+  | 'REMATCH_READY'
+  | 'CLOSED'
+  | 'CANCELLED'
+  | 'ABANDONED';
 
 export type CoinTossChoice = 'HEADS' | 'TAILS';
 
@@ -124,6 +130,35 @@ export interface MoveHistoryEntry {
   timestamp: any;
 }
 
+export interface RematchRequestDocument {
+  requestedBy: string;
+  requestedAt?: any;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'CANCELLED';
+}
+
+export interface GameHistoryPlayer {
+  uid: string;
+  displayName: string;
+  photoURL: string | null;
+  identity: PlayerIdentity;
+}
+
+export interface GameHistoryRecord {
+  id: string;
+  roomId: string;
+  whitePlayer: GameHistoryPlayer;
+  blackPlayer: GameHistoryPlayer;
+  playerUids: string[];
+  winnerUid: string | null;
+  result: 'CHECKMATE' | 'RESIGNATION' | 'DRAW' | 'STALEMATE';
+  totalMoves: number;
+  finalFen: string;
+  startedAt?: any;
+  completedAt?: any;
+  rematchNumber: number;
+  createdAt?: any;
+}
+
 export interface GameStateDocument {
   fen: string;
   turn: ChessSide;
@@ -135,10 +170,7 @@ export interface GameStateDocument {
   version: number;
   winnerUid: string | null;
   statsProcessed?: boolean;
-  rematchRequest?: {
-    requestedBy: string;
-    status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
-  } | null;
+  rematchRequest?: RematchRequestDocument | null;
   rematchCount?: number;
   updatedAt: any;
 }
@@ -155,6 +187,8 @@ export interface RoomDocument {
   timer?: string;
   truthOrDare?: boolean;
   gameState?: GameStateDocument | null;
+  historySaved?: boolean;
+  exitedPlayers?: string[];
   createdAt: any;
   updatedAt: any;
 }
