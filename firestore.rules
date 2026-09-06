@@ -14,6 +14,20 @@ service cloud.firestore {
                     && (request.resource.data.diff(resource.data).affectedKeys()
                         .hasOnly(['displayName', 'identity', 'bio', 'photoURL', 'updatedAt', 'wins', 'losses', 'gamesPlayed']));
       allow delete: if false;
+
+      // User Game History Subcollection
+      match /gameHistory/{gameId} {
+        // Authenticated users can read only their own history
+        allow read: if request.auth != null && request.auth.uid == userId;
+
+        // Creation permitted for match participants through game completion transaction
+        allow create: if request.auth != null
+                      && (request.auth.uid == userId || request.auth.uid == request.resource.data.opponentUid)
+                      && request.resource.data.gameId is string;
+
+        // History records are immutable
+        allow update, delete: if false;
+      }
     }
 
     // Private game rooms

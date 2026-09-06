@@ -299,6 +299,10 @@ function MainApp() {
               setActiveTab('history');
               setCurrentScreen('GAME_HISTORY');
             }}
+            onStartGame={() => {
+              setActiveTab('home');
+              setCurrentScreen('CREATE_ROOM');
+            }}
             onLogout={handleLogout}
             onBack={() => {
               setActiveTab('home');

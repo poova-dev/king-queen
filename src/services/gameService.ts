@@ -383,6 +383,54 @@ export const processGameStatsAndHistory = async (roomId: string): Promise<void> 
 
     transaction.set(gameRef, historyRecord);
 
+    // Save individual history record for Player 1: users/{player1.uid}/gameHistory/{gameId}
+    if (player1.uid) {
+      const p1HistoryRef = doc(db, 'users', player1.uid, 'gameHistory', gameId);
+      const isP1Winner = gameState.winnerUid === player1.uid;
+      const isP1Loser = Boolean(gameState.winnerUid && gameState.winnerUid !== player1.uid);
+      const p1Result = isP1Winner ? 'WIN' : isP1Loser ? 'LOSS' : 'DRAW';
+
+      transaction.set(p1HistoryRef, {
+        gameId,
+        roomId,
+        opponentUid: player2.uid,
+        opponentName: player2.displayName || 'Opponent',
+        opponentIdentity: player2.profileIdentity || null,
+        opponentPhotoURL: player2.photoURL || null,
+        playerColor: player1.chessColor || 'WHITE',
+        result: p1Result,
+        reason: resultType,
+        totalMoves: historyRecord.totalMoves,
+        finalFen: historyRecord.finalFen,
+        playedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+    }
+
+    // Save individual history record for Player 2: users/{player2.uid}/gameHistory/{gameId}
+    if (player2.uid) {
+      const p2HistoryRef = doc(db, 'users', player2.uid, 'gameHistory', gameId);
+      const isP2Winner = gameState.winnerUid === player2.uid;
+      const isP2Loser = Boolean(gameState.winnerUid && gameState.winnerUid !== player2.uid);
+      const p2Result = isP2Winner ? 'WIN' : isP2Loser ? 'LOSS' : 'DRAW';
+
+      transaction.set(p2HistoryRef, {
+        gameId,
+        roomId,
+        opponentUid: player1.uid,
+        opponentName: player1.displayName || 'Opponent',
+        opponentIdentity: player1.profileIdentity || null,
+        opponentPhotoURL: player1.photoURL || null,
+        playerColor: player2.chessColor || 'BLACK',
+        result: p2Result,
+        reason: resultType,
+        totalMoves: historyRecord.totalMoves,
+        finalFen: historyRecord.finalFen,
+        playedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+    }
+
     // Update Player 1 stats
     if (player1.uid) {
       const p1Ref = doc(db, 'users', player1.uid);

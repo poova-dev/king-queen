@@ -143,6 +143,31 @@ export interface GameHistoryPlayer {
   identity: PlayerIdentity;
 }
 
+export type GameResult = 'WIN' | 'LOSS' | 'DRAW';
+export type GameEndReason =
+  | 'CHECKMATE'
+  | 'RESIGNATION'
+  | 'STALEMATE'
+  | 'DRAW'
+  | 'TIMEOUT'
+  | 'ABANDONED';
+
+export interface UserGameHistoryRecord {
+  gameId: string;
+  roomId: string;
+  opponentUid: string;
+  opponentName: string;
+  opponentIdentity: PlayerIdentity | null;
+  opponentPhotoURL: string | null;
+  playerColor: ChessSide;
+  result: GameResult;
+  reason: GameEndReason;
+  totalMoves: number;
+  finalFen: string;
+  playedAt?: any;
+  createdAt?: any;
+}
+
 export interface GameHistoryRecord {
   id: string;
   roomId: string;
@@ -150,7 +175,7 @@ export interface GameHistoryRecord {
   blackPlayer: GameHistoryPlayer;
   playerUids: string[];
   winnerUid: string | null;
-  result: 'CHECKMATE' | 'RESIGNATION' | 'DRAW' | 'STALEMATE';
+  result: 'CHECKMATE' | 'RESIGNATION' | 'DRAW' | 'STALEMATE' | 'ABANDONED';
   totalMoves: number;
   finalFen: string;
   startedAt?: any;

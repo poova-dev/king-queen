@@ -1,14 +1,17 @@
-import { Palette, Shield, Volume2, User, ChevronRight, ArrowLeft, LogOut, History, Trophy } from 'lucide-react';
-import { Avatar, Card } from '../components/UI';
-import { UserProfile } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Palette, Shield, Volume2, User, ChevronRight, ArrowLeft, LogOut, History, Trophy, Swords, Loader2, ArrowRight } from 'lucide-react';
+import { Avatar, Card, Button } from '../components/UI';
+import { UserProfile, UserGameHistoryRecord } from '../types';
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../hooks/useAuth';
+import { getRecentGames, formatGameResult, formatGameDate } from '../services/gameHistoryService';
 
 interface ProfileScreenProps {
   user: UserProfile;
   onNavigateToAppearance: () => void;
   onEditProfile: () => void;
   onViewHistory?: () => void;
+  onStartGame?: () => void;
   onBack: () => void;
   onLogout?: () => void;
 }
@@ -18,11 +21,40 @@ export const ProfileScreen = ({
   onNavigateToAppearance,
   onEditProfile,
   onViewHistory,
+  onStartGame,
   onBack,
   onLogout,
 }: ProfileScreenProps) => {
   const { theme } = useTheme();
   const { logout } = useAuth();
+
+  const [recentGames, setRecentGames] = useState<UserGameHistoryRecord[]>([]);
+  const [loadingGames, setLoadingGames] = useState<boolean>(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (user.uid) {
+      getRecentGames(user.uid)
+        .then((games) => {
+          if (isMounted) {
+            setRecentGames(games);
+          }
+        })
+        .catch((err) => {
+          if (import.meta.env?.DEV) {
+            console.warn('[ProfileScreen getRecentGames error]', err);
+          }
+        })
+        .finally(() => {
+          if (isMounted) setLoadingGames(false);
+        });
+    } else {
+      setLoadingGames(false);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [user.uid]);
 
   const gamesPlayed = user.gamesPlayed ?? 0;
   const wins = user.wins ?? 0;
@@ -123,7 +155,7 @@ export const ProfileScreen = ({
           </div>
         </div>
 
-        {/* View Game History Button */}
+        {/* View Game History Quick Button */}
         {onViewHistory && (
           <button
             onClick={onViewHistory}
@@ -131,10 +163,111 @@ export const ProfileScreen = ({
           >
             <div className="flex items-center gap-2.5">
               <History className="w-4 h-4 text-[var(--primary)]" />
-              <span>VIEW GAME HISTORY</span>
+              <span>VIEW ALL HISTORY</span>
             </div>
             <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--primary)] group-hover:translate-x-0.5 transition-transform" />
           </button>
+        )}
+      </div>
+
+      {/* MATCH HISTORY Section */}
+      <div className="flex flex-col gap-3 mb-8">
+        <div className="flex items-center justify-between ml-1 mb-1">
+          <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1.5">
+            <Swords className="w-3.5 h-3.5 text-[var(--primary)]" />
+            <span>MATCH HISTORY</span>
+          </h3>
+          {recentGames.length > 0 && onViewHistory && (
+            <button
+              onClick={onViewHistory}
+              className="text-[11px] font-bold text-[var(--primary)] hover:underline uppercase tracking-wider flex items-center gap-0.5"
+            >
+              VIEW ALL <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {loadingGames ? (
+          <div className="w-full py-8 flex flex-col items-center justify-center gap-2 text-center text-[var(--text-muted)] bg-[var(--surface)] border border-[var(--border)] rounded-2xl">
+            <Loader2 className="w-5 h-5 animate-spin text-[var(--primary)]" />
+            <span className="text-xs tracking-wider">Loading battles...</span>
+          </div>
+        ) : recentGames.length === 0 ? (
+          /* Premium Royal Empty State */
+          <div className="w-full py-10 px-6 rounded-2xl bg-[var(--surface)] border border-dashed border-[var(--border)] flex flex-col items-center justify-center text-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-[var(--surface-light)] border border-[var(--border)] flex items-center justify-center text-2xl text-[var(--text-muted)] shadow-inner">
+              ♜
+            </div>
+            <div className="flex flex-col gap-1 max-w-xs">
+              <h4 className="text-sm font-display tracking-wider text-[var(--text)]">
+                NO BATTLES YET
+              </h4>
+              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                Your chess legacy begins with your first match.
+              </p>
+            </div>
+            {onStartGame && (
+              <Button
+                onClick={onStartGame}
+                variant="primary"
+                className="h-10 px-5 text-xs font-semibold tracking-wider uppercase mt-1"
+              >
+                START A BATTLE
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {recentGames.map((game) => {
+              const resInfo = formatGameResult(game.result);
+              return (
+                <div
+                  key={game.gameId}
+                  className={`w-full rounded-xl p-3.5 border flex flex-col gap-2.5 transition-all ${
+                    game.result === 'WIN'
+                      ? 'bg-gradient-to-r from-emerald-950/20 via-[var(--surface)] to-[var(--surface)] border-emerald-500/30'
+                      : game.result === 'LOSS'
+                      ? 'bg-gradient-to-r from-rose-950/20 via-[var(--surface)] to-[var(--surface)] border-rose-500/30'
+                      : 'bg-gradient-to-r from-[var(--primary)]/10 via-[var(--surface)] to-[var(--surface)] border-[var(--primary)]/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">{resInfo.icon}</span>
+                      <span className={`text-[11px] font-bold tracking-widest uppercase ${resInfo.color}`}>
+                        {resInfo.label}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-[var(--text-muted)]">
+                      {formatGameDate(game.playedAt || game.createdAt)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-0.5">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar size="sm" src={game.opponentPhotoURL || undefined} />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold text-[var(--text)]">
+                          vs {game.opponentName}
+                        </span>
+                        <span className="text-[10px] text-[var(--text-muted)]">
+                          {game.playerColor === 'WHITE' ? '♔ WHITE' : '♚ BLACK'} • {game.reason} • {game.totalMoves} Moves
+                        </span>
+                      </div>
+                    </div>
+                    {onViewHistory && (
+                      <button
+                        onClick={onViewHistory}
+                        className="px-2.5 py-1 rounded-lg bg-[var(--surface-light)] border border-[var(--border)] text-[10px] font-bold text-[var(--primary)] tracking-wider uppercase hover:border-[var(--primary)] transition-colors flex items-center gap-1"
+                      >
+                        DETAILS <ArrowRight className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

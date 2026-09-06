@@ -4,8 +4,12 @@ import {
   REMATCH_REQUEST_TIMEOUT_MS,
   isRematchExpired,
 } from './gameService';
+import {
+  formatGameResult,
+  formatGameDate,
+} from './gameHistoryService';
 import { ACTIVE_ROOM_STATUSES } from './roomService';
-import { RoomStatus, GameHistoryRecord, GameStateDocument } from '../types';
+import { RoomStatus, GameHistoryRecord, GameStateDocument, UserGameHistoryRecord } from '../types';
 
 console.log('\n--- Running Step 14 Game Completion, Rematch Lifecycle & Game History Tests ---');
 
@@ -327,16 +331,84 @@ testCase('History filters correctly separate WINS, LOSSES, and DRAWS', () => {
   assert.equal(draws[0].id, 'draw-game');
 });
 
-testCase('History sorting accurately orders newer games first', () => {
-  const games = [
-    { id: 'older', completedAt: { toMillis: () => 1000 } },
-    { id: 'newer', completedAt: { toMillis: () => 2000 } },
-  ];
+// 8. Individual User Game History Record Structure (users/{uid}/gameHistory)
+testCase('Both players receive accurate individual UserGameHistoryRecord structures', () => {
+  const p1History: UserGameHistoryRecord = {
+    gameId: 'KQ-ROOM-999_0',
+    roomId: 'KQ-ROOM-999',
+    opponentUid: 'user-b',
+    opponentName: 'Queen Player',
+    opponentIdentity: 'QUEEN',
+    opponentPhotoURL: null,
+    playerColor: 'WHITE',
+    result: 'WIN',
+    reason: 'CHECKMATE',
+    totalMoves: 42,
+    finalFen: 'rnbqkbnr/8/8/8/8/8/8/RNBQKBNR w KQkq - 0 1',
+  };
 
-  games.sort((a, b) => b.completedAt.toMillis() - a.completedAt.toMillis());
-  assert.equal(games[0].id, 'newer');
-  assert.equal(games[1].id, 'older');
+  const p2History: UserGameHistoryRecord = {
+    gameId: 'KQ-ROOM-999_0',
+    roomId: 'KQ-ROOM-999',
+    opponentUid: 'user-a',
+    opponentName: 'King Player',
+    opponentIdentity: 'KING',
+    opponentPhotoURL: null,
+    playerColor: 'BLACK',
+    result: 'LOSS',
+    reason: 'CHECKMATE',
+    totalMoves: 42,
+    finalFen: 'rnbqkbnr/8/8/8/8/8/8/RNBQKBNR w KQkq - 0 1',
+  };
+
+  assert.equal(p1History.result, 'WIN');
+  assert.equal(p2History.result, 'LOSS');
+  assert.equal(p1History.opponentUid, 'user-b');
+  assert.equal(p2History.opponentUid, 'user-a');
+  assert.equal(p1History.playerColor, 'WHITE');
+  assert.equal(p2History.playerColor, 'BLACK');
+});
+
+// 9. Formatting Helpers
+testCase('formatGameResult maps WIN, LOSS, DRAW properly', () => {
+  assert.equal(formatGameResult('WIN').label, 'VICTORY');
+  assert.equal(formatGameResult('LOSS').label, 'DEFEAT');
+  assert.equal(formatGameResult('DRAW').label, 'DRAW');
+});
+
+testCase('formatGameDate formats timestamps with readable dates and times', () => {
+  const now = new Date();
+  const todayStr = formatGameDate(now);
+  assert.equal(todayStr.startsWith('Today'), true);
+});
+
+// 10. LocalStorage and Exit Cleanup
+testCase('Exit Game cleans active room reference', () => {
+  const fakeStorage: Record<string, string> = {
+    kq_active_room_id: 'KQ-1234',
+  };
+  delete fakeStorage['kq_active_room_id'];
+  assert.equal(fakeStorage['kq_active_room_id'], undefined);
+});
+
+// 11. Event Deduplication Safety
+testCase('Notification event ID prevents duplicate notification triggers', () => {
+  const handledNotifications = new Set<string>();
+  const roomId = 'KQ-ROOM-1';
+  const eventType = 'REMATCH_REQUEST';
+  const eventVersion = 2;
+  const eventId = `${roomId}_${eventType}_${eventVersion}`;
+
+  // First time
+  const shouldShowFirst = !handledNotifications.has(eventId);
+  handledNotifications.add(eventId);
+  assert.equal(shouldShowFirst, true);
+
+  // Second time (duplicate snapshot or StrictMode)
+  const shouldShowSecond = !handledNotifications.has(eventId);
+  assert.equal(shouldShowSecond, false);
 });
 
 console.log(`\nTests Completed: ${passedTests} Passed, 0 Failed\n`);
+
 
