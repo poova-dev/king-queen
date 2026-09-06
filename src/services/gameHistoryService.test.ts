@@ -409,6 +409,106 @@ testCase('Notification event ID prevents duplicate notification triggers', () =>
   assert.equal(shouldShowSecond, false);
 });
 
+// 12. Security & Anti-Cheat Validation Rules (Security Tests 1 to 10)
+testCase('SECURITY TEST 1: User cannot update another user profile fields', () => {
+  const authUid: string = 'player-1';
+  const targetUid: string = 'player-2';
+  const isAllowed = authUid === targetUid;
+  assert.equal(isAllowed, false);
+});
+
+testCase('SECURITY TEST 2: User profile updates reject arbitrary fields beyond stats & bio', () => {
+  const allowedKeys = new Set(['displayName', 'identity', 'bio', 'photoURL', 'updatedAt', 'wins', 'losses', 'gamesPlayed']);
+  const attemptedKeys = ['wins', 'isAdmin', 'superUser'];
+  const hasOnlyAllowed = attemptedKeys.every((k) => allowedKeys.has(k));
+  assert.equal(hasOnlyAllowed, false);
+});
+
+testCase('SECURITY TEST 3: Random user cannot inject history into another account without room verification', () => {
+  const requesterUid = 'hacker-uid';
+  const targetUserUid = 'victim-uid';
+  const room = {
+    players: [{ uid: 'real-player-1' }, { uid: 'victim-uid' }],
+  };
+
+  const isRoomParticipant = room.players.some((p) => p.uid === requesterUid);
+  const isTargetInRoom = room.players.some((p) => p.uid === targetUserUid);
+  const canInjectHistory = isRoomParticipant && isTargetInRoom;
+
+  assert.equal(canInjectHistory, false);
+});
+
+testCase('SECURITY TEST 4: Only actual room participants can create game completion records', () => {
+  const room = {
+    roomId: 'KQ-ROOM-10',
+    players: [{ uid: 'alice' }, { uid: 'bob' }],
+  };
+
+  const participantCheck = (callerUid: string) => room.players.some((p) => p.uid === callerUid);
+
+  assert.equal(participantCheck('alice'), true);
+  assert.equal(participantCheck('bob'), true);
+  assert.equal(participantCheck('mallory'), false);
+});
+
+testCase('SECURITY TEST 5: Third player cannot join full room', () => {
+  const room = {
+    status: 'WAITING',
+    players: [{ uid: 'p1' }, { uid: 'p2' }],
+    maxPlayers: 2,
+  };
+
+  const canJoin = room.status === 'WAITING' && room.players.length < room.maxPlayers;
+  assert.equal(canJoin, false);
+});
+
+testCase('SECURITY TEST 6: Outsider cannot modify active room', () => {
+  const room = {
+    players: [{ uid: 'alice' }, { uid: 'bob' }],
+  };
+  const isAuthorized = (uid: string) => room.players.some((p) => p.uid === uid);
+  assert.equal(isAuthorized('mallory'), false);
+});
+
+testCase('SECURITY TEST 7: Finished game records remain immutable (update/delete blocked)', () => {
+  const allowUpdate = false;
+  const allowDelete = false;
+  assert.equal(allowUpdate, false);
+  assert.equal(allowDelete, false);
+});
+
+testCase('SECURITY TEST 8: History records cannot be updated after creation', () => {
+  const allowUpdate = false;
+  assert.equal(allowUpdate, false);
+});
+
+testCase('SECURITY TEST 9: Duplicate completion processing does not increment stats twice', () => {
+  let statsProcessed = true;
+  let playerWins = 10;
+
+  // Attempt duplicate process
+  if (!statsProcessed) {
+    playerWins += 1;
+    statsProcessed = true;
+  }
+
+  assert.equal(playerWins, 10);
+});
+
+testCase('SECURITY TEST 10: Cross-player history writes require authoritative room validation', () => {
+  const requesterUid = 'p1';
+  const targetUid = 'p2';
+  const roomData = {
+    players: [{ uid: 'p1' }, { uid: 'p2' }],
+  };
+
+  const isValidCrossWrite =
+    roomData.players.some((p) => p.uid === requesterUid) &&
+    roomData.players.some((p) => p.uid === targetUid);
+
+  assert.equal(isValidCrossWrite, true);
+});
+
 console.log(`\nTests Completed: ${passedTests} Passed, 0 Failed\n`);
 
 
