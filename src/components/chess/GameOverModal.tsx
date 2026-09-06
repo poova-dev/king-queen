@@ -124,18 +124,18 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
           <h2 className="text-2xl font-display text-[var(--text)] tracking-wider">
             {isDraw
-              ? 'PEACEFUL RESOLUTION'
+              ? 'THE BATTLE ENDS IN A DRAW'
               : isWin
-              ? `${roleIcon} ${winnerIdentity || 'KING'} WINS`
-              : `${roleIcon} ${winnerIdentity || 'QUEEN'} WINS`}
+              ? 'VICTORY 👑'
+              : 'THE KINGDOM FALLS'}
           </h2>
 
           <p className="text-xs text-[var(--text-muted)] leading-relaxed max-w-xs mt-0.5">
             {isDraw
-              ? 'The position offers no decisive move. Both sovereigns share the honor.'
+              ? 'Two rulers. One balanced battle.'
               : isWin
-              ? `Victory belongs to ${winnerName || 'You'}. Sovereign over the board.`
-              : `${winnerName || 'Your Opponent'} prevailed in this match.`}
+              ? 'Your strategy ruled the board.'
+              : 'A worthy battle. The crown awaits another game.'}
           </p>
 
           <span className="text-[11px] font-mono text-[var(--text-muted)] mt-0.5 opacity-70">

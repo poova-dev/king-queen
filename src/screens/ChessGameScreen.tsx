@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Heart, RotateCcw } from 'lucide-react';
-import { GameRoom, UserProfile, getOppositeIdentity, ChessSide } from '../types';
+import { Heart, RotateCcw, AlertTriangle } from 'lucide-react';
+import { GameRoom, UserProfile, getOppositeIdentity, ChessSide, RematchState } from '../types';
 import { GameHeader } from '../components/chess/GameHeader';
 import { PlayerCard } from '../components/chess/PlayerCard';
 import { ChessBoard } from '../components/chess/ChessBoard';
@@ -15,6 +14,8 @@ import { PromotionModal } from '../components/chess/PromotionModal';
 import { GameOverModal } from '../components/chess/GameOverModal';
 import { useChessGame } from '../hooks/useChessGame';
 import { useRematch } from '../hooks/useRematch';
+import { useRoom } from '../hooks/useRoom';
+import { useMultiplayerChess } from '../hooks/useMultiplayerChess';
 
 interface ChessGameScreenProps {
   user: UserProfile;
@@ -27,7 +28,20 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   room,
   onExit,
 }) => {
-  // Player identities (King vs Queen - NEVER changes on rematch)
+  const { currentRoom, leaveRoom } = useRoom();
+  const isMultiplayer = Boolean(currentRoom);
+
+  // Fallback local engine (active when offline / local pass-and-play)
+  const localChess = useChessGame('w');
+
+  // Real-time authoritative Multiplayer Engine
+  const multiChess = useMultiplayerChess({
+    roomId: currentRoom?.roomId,
+    userUid: user.uid,
+    room: currentRoom,
+  });
+
+  // Player identities (King vs Queen - invariant across rematches)
   const userRole = room ? room.creatorRole : user.identity;
   const opponentRole = room ? room.opponentRole : getOppositeIdentity(user.identity);
 
@@ -39,41 +53,59 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     identity: opponentRole,
   };
 
-  // Chess piece sides (separate from royal character)
-  // OPTION A: Swap colors on rematch (Game 1: White ↔ Game 2: Black)
-  const [currentUserSide, setCurrentUserSide] = useState<ChessSide>(
-    () => room?.creatorChessSide || 'WHITE'
-  );
-  const [currentOpponentSide, setCurrentOpponentSide] = useState<ChessSide>(
-    () => room?.opponentChessSide || 'BLACK'
-  );
+  // Chess piece sides (dynamically derived from authoritative Firestore state in multiplayer)
+  const currentUserSide: ChessSide = isMultiplayer
+    ? multiChess.myChessColor || room?.creatorChessSide || 'WHITE'
+    : room?.creatorChessSide || 'WHITE';
 
-  const playerColor: 'w' | 'b' = currentUserSide === 'WHITE' ? 'w' : 'b';
+  const currentOpponentSide: ChessSide = isMultiplayer
+    ? multiChess.opponentChessColor || room?.opponentChessSide || 'BLACK'
+    : room?.opponentChessSide || 'BLACK';
 
-  // Centralized Chess Game Engine state
-  const {
-    board,
-    turn,
-    gameStatus,
-    winner,
-    isGameOver,
-    isCheck,
-    isCheckmate,
-    isDraw,
-    isStalemate,
-    checkSquare,
-    selectedSquare,
-    legalMoves,
-    lastMove,
-    moveHistory,
-    capturedByWhite,
-    capturedByBlack,
-    pendingPromotion,
-    handleSquareClick,
-    completePromotion,
-    cancelPromotion,
-    resetGame,
-  } = useChessGame(playerColor);
+  // Board orientation: White is normal (Rank 8 top, Rank 1 bottom), Black is rotated (Rank 1 top, Rank 8 bottom)
+  const isFlipped = currentUserSide === 'BLACK';
+
+  // Unified game state bindings
+  const board = isMultiplayer ? multiChess.board : localChess.board;
+  const turn = isMultiplayer
+    ? multiChess.turn === 'WHITE'
+      ? 'w'
+      : 'b'
+    : localChess.turn;
+  const isGameOver = isMultiplayer ? multiChess.isGameOver : localChess.isGameOver;
+  const winner = isMultiplayer ? multiChess.winner : localChess.winner;
+  const isCheck = isMultiplayer
+    ? multiChess.gameStatus === 'CHECK'
+    : localChess.isCheck;
+  const isCheckmate = isMultiplayer
+    ? multiChess.gameStatus === 'CHECKMATE'
+    : localChess.isCheckmate;
+  const isDraw = isMultiplayer
+    ? multiChess.gameStatus === 'DRAW'
+    : localChess.isDraw;
+  const isStalemate = isMultiplayer
+    ? multiChess.gameStatus === 'STALEMATE'
+    : localChess.isStalemate;
+  const checkSquare = isMultiplayer ? multiChess.checkSquare : localChess.checkSquare;
+  const selectedSquare = isMultiplayer ? multiChess.selectedSquare : localChess.selectedSquare;
+  const legalMoves = isMultiplayer ? multiChess.legalMoves : localChess.legalMoves;
+  const lastMove = isMultiplayer ? multiChess.lastMove : localChess.lastMove;
+  const moveHistory = isMultiplayer ? multiChess.moveHistory : localChess.moveHistory;
+  const capturedByWhite = isMultiplayer ? multiChess.capturedByWhite : localChess.capturedByWhite;
+  const capturedByBlack = isMultiplayer ? multiChess.capturedByBlack : localChess.capturedByBlack;
+  const pendingPromotion = isMultiplayer ? multiChess.pendingPromotion : localChess.pendingPromotion;
+  const handleSquareClick = isMultiplayer ? multiChess.handleSquareClick : localChess.handleSquareClick;
+  const completePromotion = isMultiplayer ? multiChess.completePromotion : localChess.completePromotion;
+
+  // Turn evaluation
+  const isMyTurn = isMultiplayer
+    ? multiChess.isMyTurn
+    : turn === (currentUserSide === 'WHITE' ? 'w' : 'b') && !isGameOver;
+  const isOpponentTurn = !isMyTurn && !isGameOver;
+
+  const boardDisabled = isMultiplayer
+    ? !multiChess.isMyTurn || multiChess.isGameOver || multiChess.isSubmittingMove
+    : isGameOver;
 
   // Modals & UI overlays
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -83,30 +115,40 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const [resignedBy, setResignedBy] = useState<'YOU' | 'OPPONENT' | null>(null);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
-  // REMATCH SYSTEM & 2-PLAYER CONFIRMATION
-  const handleRematchSuccess = useCallback(() => {
-    // 1. Swap Chess Sides on Rematch (KING/QUEEN profile identities remain unchanged)
-    setCurrentUserSide((prev) => (prev === 'WHITE' ? 'BLACK' : 'WHITE'));
-    setCurrentOpponentSide((prev) => (prev === 'WHITE' ? 'BLACK' : 'WHITE'));
-
-    // 2. Complete State Reset across all game parameters
+  // Local fallback rematch hook
+  const handleLocalRematchSuccess = useCallback(() => {
     setResignedBy(null);
     setIsGameOverDismissed(false);
-    resetGame();
-  }, [resetGame]);
+    localChess.resetGame();
+  }, [localChess]);
 
-  const {
-    rematchState,
-    isResetting,
-    confirmRematch,
-    declineRematch,
-    resetRematchState,
-  } = useRematch({
-    onRematchSuccess: handleRematchSuccess,
+  const localRematch = useRematch({
+    onRematchSuccess: handleLocalRematchSuccess,
     transitionDurationMs: 850,
   });
 
-  // Send Floating Reactions
+  // Rematch status evaluation
+  const isRematchRequestedByMe = Boolean(
+    multiChess.rematchRequest && multiChess.rematchRequest.requestedBy === user.uid
+  );
+  const isRematchRequestedByOpponent = Boolean(
+    multiChess.rematchRequest &&
+      multiChess.rematchRequest.requestedBy &&
+      multiChess.rematchRequest.requestedBy !== user.uid &&
+      multiChess.rematchRequest.status === 'PENDING'
+  );
+  const isRematchDeclined = multiChess.rematchRequest?.status === 'DECLINED';
+
+  const rematchState: RematchState = isMultiplayer
+    ? {
+        playerOneConfirmed: isRematchRequestedByMe,
+        playerTwoConfirmed: isRematchRequestedByOpponent,
+        rematchStarted: false,
+        declinedBy: isRematchDeclined ? 'playerTwo' : null,
+      }
+    : localRematch.rematchState;
+
+  // Floating Reactions
   const handleSendReaction = (emoji: string) => {
     const newReaction: FloatingReaction = {
       id: Date.now(),
@@ -119,13 +161,9 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     }, 2400);
   };
 
-  // Turn evaluation
-  const isUserTurn = turn === playerColor && !isGameOver && !resignedBy;
-  const isOpponentTurn = turn !== playerColor && !isGameOver && !resignedBy;
-
-  // Handlers for match actions
+  // Match Action Handlers
   const handleOfferDraw = () => {
-    // In local 2-player mode, draw offer accepts and concludes match as Draw
+    // Reserved for draw proposal
   };
 
   const handleResign = () => {
@@ -133,22 +171,29 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
     setIsGameOverDismissed(false);
   };
 
-  // Rematch actions
-  const handlePlayAgainUser = () => {
-    confirmRematch('playerOne');
+  const handlePlayAgain = () => {
+    if (isMultiplayer) {
+      if (isRematchRequestedByOpponent) {
+        multiChess.respondToRematch(true);
+      } else {
+        multiChess.requestRematch();
+      }
+    } else {
+      localRematch.confirmRematch('playerOne');
+    }
   };
 
-  const handlePlayAgainOpponent = () => {
-    confirmRematch('playerTwo');
-  };
-
-  const handleDeclineOpponent = () => {
-    declineRematch('playerTwo');
-  };
-
-  const handleExitGame = () => {
-    declineRematch('playerOne');
-    resetRematchState();
+  const handleExitGame = async () => {
+    if (isMultiplayer) {
+      if (isRematchRequestedByOpponent) {
+        multiChess.respondToRematch(false).catch(() => {});
+      }
+      try {
+        await leaveRoom();
+      } catch (err) {
+        console.warn('[leaveRoom Error]', err);
+      }
+    }
     onExit();
   };
 
@@ -182,7 +227,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
       <GameHeader
         onBack={handleExitGame}
         onOpenMenu={() => setIsOptionsOpen(true)}
-        roomCode={room?.code || 'KQ-8472'}
+        roomCode={room?.code || currentRoom?.roomCode || 'KQ-ROYAL'}
         connectionStatus="connected"
       />
 
@@ -195,11 +240,11 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             username={opponent.username}
             identity={opponentRole}
             chessSide={currentOpponentSide}
-            wins={12}
+            wins={opponent.wins || 0}
             avatar={opponent.avatar}
             isTurn={isOpponentTurn}
             position="top"
-            timeRemaining="09:42"
+            timeRemaining={room?.timer || 'No Timer'}
           />
 
           {/* Captured Pieces by Opponent */}
@@ -210,11 +255,11 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
               alignment="left"
             />
 
-            {/* Subtle Versus / Relationship connector */}
+            {/* Versus / Score connector */}
             <div className="flex items-center gap-1.5 opacity-60 text-[9px] font-bold tracking-widest text-[var(--text-muted)]">
-              <span>12 WINS</span>
+              <span>{opponent.wins || 0} WINS</span>
               <Heart className="w-2.5 h-2.5 text-[var(--primary)] fill-[var(--primary)] opacity-70" />
-              <span>18 WINS</span>
+              <span>{user.wins || 0} WINS</span>
             </div>
           </div>
         </div>
@@ -224,15 +269,44 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
           <GameStatusBanner status="CHECK" />
         )}
 
+        {/* MOVE ERROR ALERT */}
+        {multiChess.moveError && (
+          <div className="w-full px-3 py-2 rounded-xl bg-red-950/80 border border-red-500/60 flex items-center justify-between text-xs text-red-200">
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+              <span>{multiChess.moveError}</span>
+            </div>
+            <button
+              onClick={multiChess.clearError}
+              className="text-red-400 hover:text-red-100 font-bold ml-2 px-1"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* CURRENT TURN STATUS */}
         <div className="w-full flex items-center justify-center py-1">
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] shadow-sm">
+          <div
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border shadow-sm transition-all duration-300 ${
+              isMyTurn
+                ? 'bg-[var(--primary)]/15 border-[var(--primary)] shadow-[0_0_15px_rgba(184,155,94,0.18)]'
+                : 'bg-[var(--surface)] border-[var(--border)]'
+            }`}
+          >
             <span
               className="w-2.5 h-2.5 rounded-full border border-white/20 shadow-sm"
               style={{ backgroundColor: turn === 'w' ? '#F8F8F6' : '#1A1A1D' }}
             />
             <span className="text-xs font-semibold tracking-wider text-[var(--text)] uppercase">
-              {turn === 'w' ? 'White to move' : 'Black to move'}
+              {isGameOver
+                ? 'GAME CONCLUDED'
+                : isMyTurn
+                ? 'YOUR TURN'
+                : "WAITING FOR OPPONENT..."}
+            </span>
+            <span className="text-[10px] text-[var(--text-muted)] font-mono border-l border-[var(--border)] pl-2">
+              {turn === 'w' ? 'White' : 'Black'}
             </span>
           </div>
         </div>
@@ -245,8 +319,8 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             legalMoves={legalMoves}
             lastMove={lastMove}
             checkSquare={checkSquare}
-            isFlipped={currentUserSide === 'BLACK'}
-            disabled={isGameOver || resignedBy !== null}
+            isFlipped={isFlipped}
+            disabled={boardDisabled}
             onSquareClick={handleSquareClick}
           />
         </div>
@@ -270,11 +344,11 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             username={user.username}
             identity={userRole}
             chessSide={currentUserSide}
-            wins={18}
+            wins={user.wins || 0}
             avatar={user.avatar}
-            isTurn={isUserTurn}
+            isTurn={isMyTurn}
             position="bottom"
-            timeRemaining="08:15"
+            timeRemaining={room?.timer || 'No Timer'}
           />
         </div>
 
@@ -292,7 +366,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
           <span>
             Moves Played: <strong className="text-[var(--text)]">{moveHistory.length}</strong>
           </span>
-          {(isGameOver || resignedBy !== null) ? (
+          {isGameOver || resignedBy !== null ? (
             <button
               onClick={() => setIsGameOverDismissed(false)}
               className="text-[var(--primary)] hover:underline font-semibold tracking-wider uppercase text-[10px] flex items-center gap-1"
@@ -352,10 +426,8 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         userProfile={user}
         opponentProfile={opponent}
         rematchState={rematchState}
-        isResetting={isResetting}
-        onPlayAgain={handlePlayAgainUser}
-        onSimulateOpponentPlayAgain={handlePlayAgainOpponent}
-        onSimulateOpponentDecline={handleDeclineOpponent}
+        isResetting={localRematch.isResetting}
+        onPlayAgain={handlePlayAgain}
         onViewGame={() => setIsGameOverDismissed(true)}
         onExit={handleExitGame}
       />
