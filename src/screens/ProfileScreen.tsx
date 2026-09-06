@@ -1,4 +1,4 @@
-import { Palette, Shield, Volume2, User, ChevronRight, ArrowLeft, LogOut } from 'lucide-react';
+import { Palette, Shield, Volume2, User, ChevronRight, ArrowLeft, LogOut, History, Trophy } from 'lucide-react';
 import { Avatar, Card } from '../components/UI';
 import { UserProfile } from '../types';
 import { useTheme } from '../hooks/useTheme';
@@ -8,6 +8,7 @@ interface ProfileScreenProps {
   user: UserProfile;
   onNavigateToAppearance: () => void;
   onEditProfile: () => void;
+  onViewHistory?: () => void;
   onBack: () => void;
   onLogout?: () => void;
 }
@@ -16,11 +17,17 @@ export const ProfileScreen = ({
   user,
   onNavigateToAppearance,
   onEditProfile,
+  onViewHistory,
   onBack,
   onLogout,
 }: ProfileScreenProps) => {
   const { theme } = useTheme();
   const { logout } = useAuth();
+
+  const gamesPlayed = user.gamesPlayed ?? 0;
+  const wins = user.wins ?? 0;
+  const losses = user.losses ?? 0;
+  const winRate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : 0;
 
   const handleLogout = async () => {
     try {
@@ -80,33 +87,55 @@ export const ProfileScreen = ({
           )}
         </div>
 
-        {/* Quick Stats */}
-        <div className="w-full grid grid-cols-3 gap-3 mt-4">
-          <div className="flex flex-col items-center p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
+        {/* Quick Stats Grid with Win Rate */}
+        <div className="w-full grid grid-cols-4 gap-2 mt-4">
+          <div className="flex flex-col items-center p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
             <span className="text-base font-display font-semibold text-[var(--text)]">
-              {user.gamesPlayed ?? 0}
+              {gamesPlayed}
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] text-center">
-              Games Played
+            <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] text-center font-medium">
+              Battles
             </span>
           </div>
-          <div className="flex flex-col items-center p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
-            <span className="text-base font-display font-semibold text-[var(--primary)]">
-              {user.wins ?? 0}
+          <div className="flex flex-col items-center p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+            <span className="text-base font-display font-semibold text-emerald-400">
+              {wins}
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+            <span className="text-[9px] uppercase tracking-wider text-emerald-300 font-medium">
               Wins
             </span>
           </div>
-          <div className="flex flex-col items-center p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
-            <span className="text-base font-display font-semibold text-[var(--text)]">
-              {user.losses ?? 0}
+          <div className="flex flex-col items-center p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20">
+            <span className="text-base font-display font-semibold text-rose-400">
+              {losses}
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+            <span className="text-[9px] uppercase tracking-wider text-rose-300 font-medium">
               Losses
             </span>
           </div>
+          <div className="flex flex-col items-center p-2.5 rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/30">
+            <span className="text-base font-display font-semibold text-[var(--primary)]">
+              {winRate}%
+            </span>
+            <span className="text-[9px] uppercase tracking-wider text-[var(--primary)] font-medium">
+              Win Rate
+            </span>
+          </div>
         </div>
+
+        {/* View Game History Button */}
+        {onViewHistory && (
+          <button
+            onClick={onViewHistory}
+            className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[var(--surface-light)] to-[var(--surface)] border border-[var(--primary)]/30 hover:border-[var(--primary)] text-xs font-semibold text-[var(--primary)] tracking-wider uppercase transition-all flex items-center justify-between group shadow-sm"
+          >
+            <div className="flex items-center gap-2.5">
+              <History className="w-4 h-4 text-[var(--primary)]" />
+              <span>VIEW GAME HISTORY</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--primary)] group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        )}
       </div>
 
       {/* Settings Section */}

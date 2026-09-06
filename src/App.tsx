@@ -295,6 +295,10 @@ function MainApp() {
               setIsEditingProfile(true);
               setCurrentScreen('PROFILE_SETUP');
             }}
+            onViewHistory={() => {
+              setActiveTab('history');
+              setCurrentScreen('GAME_HISTORY');
+            }}
             onLogout={handleLogout}
             onBack={() => {
               setActiveTab('home');

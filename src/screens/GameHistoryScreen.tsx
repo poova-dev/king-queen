@@ -22,6 +22,7 @@ export const GameHistoryScreen: React.FC<GameHistoryScreenProps> = ({
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [limitCount, setLimitCount] = useState<number>(20);
   const [hasMore, setHasMore] = useState<boolean>(false);
+  const [activeFilter, setActiveFilter] = useState<'ALL' | 'WINS' | 'LOSSES' | 'DRAWS'>('ALL');
   const [selectedGame, setSelectedGame] = useState<GameHistoryRecord | null>(null);
 
   const loadHistory = useCallback(async (count: number) => {
@@ -54,6 +55,15 @@ export const GameHistoryScreen: React.FC<GameHistoryScreenProps> = ({
     setLoadingMore(true);
     setLimitCount((prev) => prev + 20);
   };
+
+  // Filtered games
+  const filteredGames = games.filter((game) => {
+    if (activeFilter === 'ALL') return true;
+    if (activeFilter === 'WINS') return user.uid && game.winnerUid === user.uid;
+    if (activeFilter === 'LOSSES') return user.uid && game.winnerUid && game.winnerUid !== user.uid;
+    if (activeFilter === 'DRAWS') return !game.winnerUid;
+    return true;
+  });
 
   // Stats calculation
   const totalGames = user.gamesPlayed || games.length || 0;
@@ -154,18 +164,43 @@ export const GameHistoryScreen: React.FC<GameHistoryScreenProps> = ({
         </div>
       </div>
 
+      {/* FILTER PILLS */}
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+        {(['ALL', 'WINS', 'LOSSES', 'DRAWS'] as const).map((filter) => {
+          const isActive = activeFilter === filter;
+          return (
+            <button
+              key={filter}
+              onClick={() => setActiveFilter(filter)}
+              className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold tracking-wider uppercase transition-all whitespace-nowrap ${
+                isActive
+                  ? 'bg-[var(--primary)] text-black shadow-md shadow-[var(--primary)]/20 font-extrabold'
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)] border border-[var(--border)]'
+              }`}
+            >
+              {filter}
+            </button>
+          );
+        })}
+      </div>
+
       {/* BATTLES LIST */}
       <div className="flex flex-col gap-3">
-        <span className="text-[10px] font-bold tracking-widest text-[var(--text-muted)] uppercase px-1">
-          Recent Encounters
-        </span>
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[10px] font-bold tracking-widest text-[var(--text-muted)] uppercase">
+            {activeFilter === 'ALL' ? 'Recent Encounters' : `${activeFilter} (${filteredGames.length})`}
+          </span>
+          <span className="text-[10px] font-mono text-[var(--text-muted)]">
+            {filteredGames.length} of {games.length} shown
+          </span>
+        </div>
 
         {loading ? (
           <div className="w-full py-16 flex flex-col items-center justify-center gap-2 text-center text-[var(--text-muted)]">
             <Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" />
             <span className="text-xs tracking-wider">Unrolling the royal archives...</span>
           </div>
-        ) : games.length === 0 ? (
+        ) : filteredGames.length === 0 ? (
           /* EMPTY STATE */
           <div className="w-full py-16 px-6 rounded-3xl bg-[var(--surface)] border border-dashed border-[var(--border)] flex flex-col items-center justify-center text-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-[var(--surface-light)] border border-[var(--border)] flex items-center justify-center text-3xl text-[var(--text-muted)] shadow-inner">
@@ -173,19 +208,23 @@ export const GameHistoryScreen: React.FC<GameHistoryScreenProps> = ({
             </div>
             <div className="flex flex-col gap-1 max-w-xs">
               <h3 className="text-base font-display tracking-wider text-[var(--text)]">
-                NO BATTLES YET
+                {games.length === 0 ? 'NO BATTLES YET' : `NO ${activeFilter} FOUND`}
               </h3>
               <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                Your kingdom awaits its first royal challenge. Create or join a private room to make history.
+                {games.length === 0
+                  ? 'Your kingdom awaits its first royal challenge. Create or join a private room to make history.'
+                  : `There are no recorded battles matching your ${activeFilter.toLowerCase()} filter.`}
               </p>
             </div>
-            <Button onClick={onStartGame} variant="primary" className="h-11 px-6 text-xs font-semibold tracking-wider uppercase mt-1">
-              START A GAME
-            </Button>
+            {games.length === 0 && (
+              <Button onClick={onStartGame} variant="primary" className="h-11 px-6 text-xs font-semibold tracking-wider uppercase mt-1">
+                START A GAME
+              </Button>
+            )}
           </div>
         ) : (
           <>
-            {games.map((game) => {
+            {filteredGames.map((game) => {
               const isWin = user.uid && game.winnerUid === user.uid;
               const isLoss = user.uid && game.winnerUid && game.winnerUid !== user.uid;
               const isDraw = !game.winnerUid;

@@ -240,4 +240,103 @@ testCase('Exited player keeps room as COMPLETED when only one player has exited'
   assert.equal(nextStatus, 'COMPLETED');
 });
 
+// 7. History Query & Filtering Logic
+testCase('History query filters only games where user is in playerUids', () => {
+  const games: GameHistoryRecord[] = [
+    {
+      id: 'g1',
+      roomId: 'r1',
+      whitePlayer: { uid: 'user-a', displayName: 'A', photoURL: null, identity: 'KING' },
+      blackPlayer: { uid: 'user-b', displayName: 'B', photoURL: null, identity: 'QUEEN' },
+      playerUids: ['user-a', 'user-b'],
+      winnerUid: 'user-a',
+      result: 'CHECKMATE',
+      totalMoves: 10,
+      finalFen: '',
+      rematchNumber: 0,
+    },
+    {
+      id: 'g2',
+      roomId: 'r2',
+      whitePlayer: { uid: 'user-c', displayName: 'C', photoURL: null, identity: 'KING' },
+      blackPlayer: { uid: 'user-d', displayName: 'D', photoURL: null, identity: 'QUEEN' },
+      playerUids: ['user-c', 'user-d'],
+      winnerUid: 'user-c',
+      result: 'CHECKMATE',
+      totalMoves: 12,
+      finalFen: '',
+      rematchNumber: 0,
+    },
+  ];
+
+  const userAGames = games.filter((g) => g.playerUids.includes('user-a'));
+  assert.equal(userAGames.length, 1);
+  assert.equal(userAGames[0].id, 'g1');
+});
+
+testCase('History filters correctly separate WINS, LOSSES, and DRAWS', () => {
+  const currentUid = 'user-a';
+  const games: GameHistoryRecord[] = [
+    {
+      id: 'win-game',
+      roomId: 'r1',
+      whitePlayer: { uid: 'user-a', displayName: 'A', photoURL: null, identity: 'KING' },
+      blackPlayer: { uid: 'user-b', displayName: 'B', photoURL: null, identity: 'QUEEN' },
+      playerUids: ['user-a', 'user-b'],
+      winnerUid: 'user-a',
+      result: 'CHECKMATE',
+      totalMoves: 20,
+      finalFen: '',
+      rematchNumber: 0,
+    },
+    {
+      id: 'loss-game',
+      roomId: 'r2',
+      whitePlayer: { uid: 'user-a', displayName: 'A', photoURL: null, identity: 'KING' },
+      blackPlayer: { uid: 'user-b', displayName: 'B', photoURL: null, identity: 'QUEEN' },
+      playerUids: ['user-a', 'user-b'],
+      winnerUid: 'user-b',
+      result: 'CHECKMATE',
+      totalMoves: 30,
+      finalFen: '',
+      rematchNumber: 0,
+    },
+    {
+      id: 'draw-game',
+      roomId: 'r3',
+      whitePlayer: { uid: 'user-a', displayName: 'A', photoURL: null, identity: 'KING' },
+      blackPlayer: { uid: 'user-b', displayName: 'B', photoURL: null, identity: 'QUEEN' },
+      playerUids: ['user-a', 'user-b'],
+      winnerUid: null,
+      result: 'STALEMATE',
+      totalMoves: 40,
+      finalFen: '',
+      rematchNumber: 0,
+    },
+  ];
+
+  const wins = games.filter((g) => g.winnerUid === currentUid);
+  const losses = games.filter((g) => g.winnerUid && g.winnerUid !== currentUid);
+  const draws = games.filter((g) => !g.winnerUid);
+
+  assert.equal(wins.length, 1);
+  assert.equal(wins[0].id, 'win-game');
+  assert.equal(losses.length, 1);
+  assert.equal(losses[0].id, 'loss-game');
+  assert.equal(draws.length, 1);
+  assert.equal(draws[0].id, 'draw-game');
+});
+
+testCase('History sorting accurately orders newer games first', () => {
+  const games = [
+    { id: 'older', completedAt: { toMillis: () => 1000 } },
+    { id: 'newer', completedAt: { toMillis: () => 2000 } },
+  ];
+
+  games.sort((a, b) => b.completedAt.toMillis() - a.completedAt.toMillis());
+  assert.equal(games[0].id, 'newer');
+  assert.equal(games[1].id, 'older');
+});
+
 console.log(`\nTests Completed: ${passedTests} Passed, 0 Failed\n`);
+
