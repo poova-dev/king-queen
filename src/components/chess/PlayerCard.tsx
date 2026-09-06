@@ -13,6 +13,7 @@ interface PlayerCardProps {
   isTurn: boolean;
   position: 'top' | 'bottom';
   timeRemaining?: string;
+  connectionStatus?: 'ONLINE' | 'RECONNECTING' | 'OFFLINE';
 }
 
 export const PlayerCard: React.FC<PlayerCardProps> = ({
@@ -24,6 +25,7 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
   isTurn,
   position,
   timeRemaining = '10:00',
+  connectionStatus = 'ONLINE',
 }) => {
   const isKing = identity === 'KING';
   const roleIcon = isKing ? '♔' : '♕';
@@ -60,6 +62,16 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
             <span className="text-sm font-semibold truncate text-[var(--text)]">
               {displayName}
             </span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                connectionStatus === 'ONLINE'
+                  ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]'
+                  : connectionStatus === 'RECONNECTING'
+                  ? 'bg-amber-400 animate-ping'
+                  : 'bg-rose-500'
+              }`}
+              title={`Status: ${connectionStatus}`}
+            />
             <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.2 rounded bg-[var(--surface-light)] border border-[var(--border)] text-[var(--primary)]">
               {roleIcon} {identity}
             </span>

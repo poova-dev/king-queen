@@ -47,6 +47,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
   const isCheckmate = resultType === 'CHECKMATE' || endReason === 'CHECKMATE';
   const isResignation = resultType === 'RESIGNATION' || endReason === 'RESIGNATION';
+  const isAbandoned = resultType === 'ABANDONED' || endReason === 'ABANDONED';
   const isStalemate = resultType === 'STALEMATE' || endReason === 'STALEMATE';
   const isDraw =
     isStalemate ||
@@ -54,7 +55,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     (endReason !== undefined &&
       endReason !== null &&
       endReason !== 'CHECKMATE' &&
-      endReason !== 'RESIGNATION');
+      endReason !== 'RESIGNATION' &&
+      endReason !== 'ABANDONED');
   const isWin = winner === 'YOU';
 
   const roleIcon = winnerIdentity === 'KING' ? '♔' : '♕';
@@ -106,7 +108,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           <div className="w-18 h-18 rounded-2xl bg-[var(--surface-light)] border border-[var(--border)] flex items-center justify-center text-3xl text-[var(--primary)] shadow-inner">
             ⚖️
           </div>
-        ) : isResignation && !isWin ? (
+        ) : (isResignation || isAbandoned) && !isWin ? (
           <div className="w-18 h-18 rounded-2xl bg-[var(--surface-light)] border border-rose-500/40 flex items-center justify-center text-3xl text-rose-400 shadow-inner">
             🏳
           </div>
@@ -132,6 +134,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               ? isWin
                 ? '👑 VICTORY'
                 : '🏳 DEFEAT'
+              : isAbandoned
+              ? isWin
+                ? '👑 VICTORY'
+                : '🏳 DEFEAT'
               : endReason === 'STALEMATE' || isStalemate
               ? 'STALEMATE'
               : endReason === 'THREEFOLD_REPETITION'
@@ -150,6 +156,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               ? isWin
                 ? 'VICTORY!'
                 : 'THE CROWN FALLS'
+              : isAbandoned
+              ? isWin
+                ? 'VICTORY BY ABANDONMENT'
+                : 'THE CROWN IS FORFEITED'
               : isWin
               ? 'VICTORY 👑'
               : 'THE KINGDOM FALLS'}
@@ -170,6 +180,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               ? isWin
                 ? 'Your opponent surrendered the throne.'
                 : 'You surrendered the battle.'
+              : isAbandoned
+              ? isWin
+                ? 'Your opponent abandoned the kingdom.'
+                : 'You were disconnected and forfeited the battle.'
               : isWin
               ? 'Your strategy ruled the board.'
               : 'A worthy battle. The crown awaits another game.'}

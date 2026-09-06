@@ -13,10 +13,13 @@ import { GameStatusBanner } from '../components/chess/GameStatusBanner';
 import { PromotionModal } from '../components/chess/PromotionModal';
 import { GameOverModal } from '../components/chess/GameOverModal';
 import { ResignConfirmationModal } from '../components/chess/ResignConfirmationModal';
+import { OpponentDisconnectedBanner } from '../components/chess/OpponentDisconnectedBanner';
+import { SelfDisconnectedBanner } from '../components/chess/SelfDisconnectedBanner';
 import { useChessGame } from '../hooks/useChessGame';
 import { useRematch } from '../hooks/useRematch';
 import { useRoom } from '../hooks/useRoom';
 import { useMultiplayerChess } from '../hooks/useMultiplayerChess';
+import { useConnectionStatus } from '../hooks/useConnectionStatus';
 
 interface ChessGameScreenProps {
   user: UserProfile;
@@ -98,6 +101,20 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const handleSquareClick = isMultiplayer ? multiChess.handleSquareClick : localChess.handleSquareClick;
   const completePromotion = isMultiplayer ? multiChess.completePromotion : localChess.completePromotion;
 
+  // Real-time network and presence status
+  const { isOnline, isReconnecting, connectionStatus } = useConnectionStatus({
+    roomId: currentRoom?.roomId,
+    userUid: user.uid,
+    autoSyncPresence: isMultiplayer,
+  });
+
+  const opponentPlayerDoc = isMultiplayer
+    ? currentRoom?.players.find((p) => p.uid !== user.uid)
+    : null;
+  const opponentConnectionStatus =
+    opponentPlayerDoc?.connectionStatus || 'ONLINE';
+  const myConnectionStatus = isMultiplayer ? connectionStatus : 'ONLINE';
+
   // Turn evaluation
   const isMyTurn = isMultiplayer
     ? multiChess.isMyTurn
@@ -105,7 +122,14 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
   const isOpponentTurn = !isMyTurn && !isGameOver;
 
   const boardDisabled = isMultiplayer
-    ? !multiChess.isMyTurn || multiChess.isGameOver || multiChess.isSubmittingMove || multiChess.isResigning
+    ? !multiChess.isMyTurn ||
+      multiChess.isGameOver ||
+      multiChess.isSubmittingMove ||
+      multiChess.isResigning ||
+      multiChess.isClaimingVictory ||
+      !isOnline ||
+      isReconnecting ||
+      multiChess.isOpponentDisconnected
     : isGameOver;
 
   // Modals & UI overlays
@@ -276,7 +300,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
         onBack={handleExitGame}
         onOpenMenu={() => setIsOptionsOpen(true)}
         roomCode={room?.code || currentRoom?.roomCode || 'KQ-ROYAL'}
-        connectionStatus="connected"
+        connectionStatus={!isOnline ? 'offline' : isReconnecting ? 'reconnecting' : 'connected'}
       />
 
       {/* Main Board Container (Responsive Mobile-first, gracefully centered on Desktop) */}
@@ -293,6 +317,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             isTurn={isOpponentTurn}
             position="top"
             timeRemaining={room?.timer || 'No Timer'}
+            connectionStatus={multiChess.isOpponentDisconnected ? 'RECONNECTING' : opponentConnectionStatus}
           />
 
           {/* Captured Pieces by Opponent */}
@@ -311,6 +336,21 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             </div>
           </div>
         </div>
+
+        {/* OPPONENT DISCONNECTED BANNER */}
+        <OpponentDisconnectedBanner
+          isVisible={isMultiplayer && multiChess.isOpponentDisconnected}
+          secondsRemaining={multiChess.disconnectSecondsRemaining}
+          opponentName={opponent.displayName}
+          isClaimingVictory={multiChess.isClaimingVictory}
+          onClaimVictory={multiChess.claimVictory}
+        />
+
+        {/* SELF OFFLINE / RECONNECTING BANNER */}
+        <SelfDisconnectedBanner
+          isVisible={!isOnline || isReconnecting}
+          isReconnecting={isReconnecting}
+        />
 
         {/* CHECK BANNER */}
         {isCheck && !isGameOver && !resignedBy && (
@@ -397,6 +437,7 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             isTurn={isMyTurn}
             position="bottom"
             timeRemaining={room?.timer || 'No Timer'}
+            connectionStatus={myConnectionStatus}
           />
         </div>
 
@@ -407,7 +448,15 @@ export const ChessGameScreen: React.FC<ChessGameScreenProps> = ({
             onOpenReactions={() => setIsReactionPickerOpen(true)}
             onOpenOptions={() => setIsOptionsOpen(true)}
             onResign={handleResign}
-            isResignDisabled={isGameOver || multiChess.isResigning || (!isMultiplayer && resignedBy !== null)}
+            isResignDisabled={
+              isGameOver ||
+              multiChess.isResigning ||
+              multiChess.isClaimingVictory ||
+              !isOnline ||
+              isReconnecting ||
+              multiChess.isOpponentDisconnected ||
+              (!isMultiplayer && resignedBy !== null)
+            }
           />
         </div>
 

@@ -92,6 +92,8 @@ export type RoomStatus =
 
 export type CoinTossChoice = 'HEADS' | 'TAILS';
 
+export type PlayerConnectionStatus = 'ONLINE' | 'RECONNECTING' | 'OFFLINE';
+
 export interface RoomPlayer {
   uid: string;
   displayName: string;
@@ -102,6 +104,8 @@ export interface RoomPlayer {
   chessColor: ChessSide | null;
   ready: boolean;
   joinedAt: any;
+  connectionStatus?: PlayerConnectionStatus;
+  lastSeenAt?: any;
 }
 
 export type MultiplayerGameStatus =
@@ -197,6 +201,13 @@ export interface GameHistoryRecord {
   createdAt?: any;
 }
 
+export interface DisconnectState {
+  status: 'NONE' | 'WAITING_FOR_RECONNECT' | 'EXPIRED';
+  disconnectedUid: string | null;
+  disconnectedAt: any;
+  graceExpiresAt: any;
+}
+
 export interface GameStateDocument {
   fen: string;
   turn: ChessSide;
@@ -209,6 +220,8 @@ export interface GameStateDocument {
   winnerUid: string | null;
   resignedBy?: string | null;
   endReason?: GameEndReason | null;
+  disconnectState?: DisconnectState | null;
+  disconnectedUid?: string | null;
   finishedAt?: any;
   statsProcessed?: boolean;
   rematchRequest?: RematchRequestDocument | null;

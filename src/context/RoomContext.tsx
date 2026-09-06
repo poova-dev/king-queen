@@ -30,6 +30,7 @@ import {
   mapJoinRoomError,
   mapRoomError,
 } from '../services/roomService';
+import { markPlayerOnline } from '../services/presenceService';
 import { Unsubscribe } from 'firebase/firestore';
 
 export interface RoomContextType {
@@ -143,6 +144,7 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (activeRoom) {
             setCurrentRoom(activeRoom);
             attachRoomListener(activeRoom.roomId);
+            markPlayerOnline(activeRoom.roomId, authUser.uid).catch(() => {});
           } else if (savedRoomId) {
             // Stale or completed room in storage: purge it immediately
             if (import.meta.env?.DEV) {

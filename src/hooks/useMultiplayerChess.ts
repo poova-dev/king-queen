@@ -21,6 +21,10 @@ import {
   INITIAL_CHESS_FEN,
   isRematchExpired,
 } from '../services/gameService';
+import {
+  claimVictoryForDisconnect,
+  mapConnectionError,
+} from '../services/presenceService';
 
 export interface UseMultiplayerChessProps {
   roomId: string | undefined;
@@ -59,9 +63,12 @@ export const useMultiplayerChess = ({
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [isSubmittingMove, setIsSubmittingMove] = useState<boolean>(false);
   const [isResigning, setIsResigning] = useState<boolean>(false);
+  const [isClaimingVictory, setIsClaimingVictory] = useState<boolean>(false);
+  const [disconnectSecondsRemaining, setDisconnectSecondsRemaining] = useState<number>(60);
   const [moveError, setMoveError] = useState<string | null>(null);
 
   const gameState = room?.gameState || null;
+  const disconnectState = gameState?.disconnectState || null;
 
   // Player identity & authorization
   const currentPlayer = useMemo(() => {
@@ -96,6 +103,52 @@ export const useMultiplayerChess = ({
       !isGameOver &&
       room?.status === 'PLAYING'
   );
+
+  const isOpponentDisconnected = Boolean(
+    opponentPlayer &&
+      !isGameOver &&
+      disconnectState &&
+      disconnectState.status === 'WAITING_FOR_RECONNECT' &&
+      disconnectState.disconnectedUid === opponentPlayer.uid
+  );
+
+  // Synchronize disconnect countdown timer
+  useEffect(() => {
+    if (!isOpponentDisconnected || !disconnectState?.graceExpiresAt) {
+      setDisconnectSecondsRemaining(60);
+      return;
+    }
+
+    const calcRemaining = () => {
+      let expiresAtMs = 0;
+      if (typeof disconnectState.graceExpiresAt === 'number') {
+        expiresAtMs = disconnectState.graceExpiresAt;
+      } else if (disconnectState.graceExpiresAt?.toMillis) {
+        expiresAtMs = disconnectState.graceExpiresAt.toMillis();
+      } else {
+        expiresAtMs = Number(disconnectState.graceExpiresAt) || 0;
+      }
+
+      const diffSec = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+      setDisconnectSecondsRemaining(diffSec);
+    };
+
+    calcRemaining();
+    const interval = setInterval(calcRemaining, 1000);
+    return () => clearInterval(interval);
+  }, [isOpponentDisconnected, disconnectState?.graceExpiresAt]);
+
+  const claimVictory = useCallback(async () => {
+    if (!roomId || !userUid || isClaimingVictory || isGameOver) return;
+    setIsClaimingVictory(true);
+    try {
+      await claimVictoryForDisconnect(roomId, userUid);
+    } catch (err: any) {
+      setMoveError(mapConnectionError(err));
+    } finally {
+      setIsClaimingVictory(false);
+    }
+  }, [roomId, userUid, isClaimingVictory, isGameOver]);
 
   const initializationAttemptedRef = useRef<string | null>(null);
   const processedGameEndRef = useRef<string | null>(null);
@@ -499,6 +552,10 @@ export const useMultiplayerChess = ({
     pendingPromotion,
     isSubmittingMove,
     isResigning,
+    isClaimingVictory,
+    isOpponentDisconnected,
+    disconnectSecondsRemaining,
+    disconnectState,
     moveError,
     rematchRequest:
       gameState?.rematchRequest && !isRematchExpired(gameState.rematchRequest.requestedAt)
@@ -511,6 +568,7 @@ export const useMultiplayerChess = ({
     requestRematch,
     respondToRematch,
     resign,
+    claimVictory,
     clearError: () => setMoveError(null),
   };
 };
