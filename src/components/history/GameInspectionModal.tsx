@@ -108,7 +108,11 @@ export const GameInspectionModal: React.FC<GameInspectionModalProps> = ({
                     : 'bg-[var(--primary)]/10 border-[var(--primary)]/30 text-[var(--primary)]'
                 }`}
               >
-                {isWin ? 'VICTORY' : isLoss ? 'DEFEAT' : 'DRAW'} • {game.result}
+                {game.result === 'TIMEOUT'
+                  ? isWin
+                    ? '⏱ WON ON TIME'
+                    : '⏱ LOST ON TIME'
+                  : `${isWin ? 'VICTORY' : isLoss ? 'DEFEAT' : 'DRAW'} • ${game.result}`}
               </span>
             </div>
 

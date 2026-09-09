@@ -110,3 +110,128 @@ export const formatGameDate = (timestamp: any): string => {
   if (diffDays < 7) return `${diffDays} days ago, ${timeStr}`;
   return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${timeStr}`;
 };
+
+/**
+ * Derives comprehensive Chess and Truth/Dare statistics from user history and profile
+ */
+export const calculateUserGameStats = (
+  records: UserGameHistoryRecord[],
+  profileUser?: { wins?: number; losses?: number; gamesPlayed?: number }
+): { chess: import('../types').UserChessStats; truthDare: import('../types').UserTruthDareStats } => {
+  // ── Chess Stats ──
+  const chessRecords = records.filter((r) => !r.gameType || r.gameType === 'CHESS');
+
+  const chessGamesCount = Math.max(
+    chessRecords.length,
+    profileUser?.gamesPlayed ?? 0
+  );
+
+  let chessWins = profileUser?.wins ?? 0;
+  let chessLosses = profileUser?.losses ?? 0;
+  let chessDraws = 0;
+  let checkmates = 0;
+  let resignations = 0;
+  let timeouts = 0;
+  let totalMoves = 0;
+
+  if (chessRecords.length > 0) {
+    let recWins = 0;
+    let recLosses = 0;
+    let recDraws = 0;
+
+    for (const r of chessRecords) {
+      if (r.result === 'WIN') recWins++;
+      else if (r.result === 'LOSS') recLosses++;
+      else recDraws++;
+
+      if (r.reason === 'CHECKMATE') checkmates++;
+      else if (r.reason === 'RESIGNATION') resignations++;
+      else if (r.reason === 'TIMEOUT') timeouts++;
+
+      totalMoves += r.totalMoves || 0;
+    }
+
+    if (!profileUser?.gamesPlayed || profileUser.gamesPlayed === chessRecords.length) {
+      chessWins = recWins;
+      chessLosses = recLosses;
+      chessDraws = recDraws;
+    } else {
+      chessDraws = Math.max(0, chessGamesCount - (chessWins + chessLosses));
+    }
+  } else {
+    chessDraws = Math.max(0, chessGamesCount - (chessWins + chessLosses));
+  }
+
+  const chessWinRate =
+    chessGamesCount > 0 ? Math.round((chessWins / chessGamesCount) * 100) : 0;
+  const avgMoves =
+    chessRecords.length > 0 ? Math.round(totalMoves / chessRecords.length) : 0;
+
+  // ── Truth / Dare Stats ──
+  const tdRecords = records.filter((r) => r.gameType === 'TRUTH_DARE');
+
+  let tdRounds = 0;
+  let truthsCount = 0;
+  let daresCount = 0;
+  let challengesCount = 0;
+
+  const modeCounts: Record<string, number> = { TRUTH: 0, DARE: 0 };
+  const categoryCounts: Record<string, number> = {};
+  const diffDistribution: Record<import('../types').TruthDareDifficulty, number> = {
+    EASY: 0,
+    MEDIUM: 0,
+    HARD: 0,
+    EXTREME: 0,
+  };
+
+  for (const r of tdRecords) {
+    tdRounds += r.roundsPlayed || 0;
+    truthsCount += r.truthsCompleted || 0;
+    daresCount += r.daresCompleted || 0;
+    challengesCount += r.completedChallenges || (r.truthsCompleted || 0) + (r.daresCompleted || 0);
+
+    modeCounts.TRUTH += r.truthsCompleted || 0;
+    modeCounts.DARE += r.daresCompleted || 0;
+  }
+
+  let favoriteMode: import('../types').TruthDareMode | 'NONE' = 'NONE';
+  if (modeCounts.TRUTH > modeCounts.DARE) favoriteMode = 'TRUTH';
+  else if (modeCounts.DARE > modeCounts.TRUTH) favoriteMode = 'DARE';
+  else if (modeCounts.TRUTH > 0) favoriteMode = 'TRUTH';
+
+  let favoriteCategory: import('../types').TruthDareCategory | 'NONE' = 'NONE';
+  let maxCatCount = 0;
+  for (const [cat, count] of Object.entries(categoryCounts)) {
+    if (count > maxCatCount) {
+      maxCatCount = count;
+      favoriteCategory = cat as import('../types').TruthDareCategory;
+    }
+  }
+
+  return {
+    chess: {
+      gamesPlayed: chessGamesCount,
+      wins: chessWins,
+      losses: chessLosses,
+      draws: chessDraws,
+      winRate: chessWinRate,
+      checkmates,
+      resignations,
+      timeouts,
+      totalMoves,
+      avgMovesPerGame: avgMoves,
+    },
+    truthDare: {
+      gamesPlayed: tdRecords.length,
+      roundsPlayed: tdRounds,
+      truthsCompleted: truthsCount,
+      daresCompleted: daresCount,
+      challengesCompleted: challengesCount,
+      challengerRounds: Math.ceil(tdRounds / 2),
+      judgeRounds: Math.floor(tdRounds / 2),
+      favoriteMode,
+      favoriteCategory,
+      difficultyDistribution: diffDistribution,
+    },
+  };
+};

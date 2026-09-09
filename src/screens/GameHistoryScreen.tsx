@@ -10,12 +10,15 @@ interface GameHistoryScreenProps {
   user: UserProfile;
   onBack: () => void;
   onStartGame: () => void;
+  /** Increment to force a re-fetch of game history (e.g., after returning from a completed game) */
+  refreshKey?: number;
 }
 
 export const GameHistoryScreen: React.FC<GameHistoryScreenProps> = ({
   user,
   onBack,
   onStartGame,
+  refreshKey,
 }) => {
   const [games, setGames] = useState<GameHistoryRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -49,7 +52,7 @@ export const GameHistoryScreen: React.FC<GameHistoryScreenProps> = ({
   useEffect(() => {
     setLoading(true);
     loadHistory(limitCount);
-  }, [loadHistory, limitCount]);
+  }, [loadHistory, limitCount, refreshKey]);
 
   const handleLoadMore = () => {
     setLoadingMore(true);
@@ -260,7 +263,15 @@ export const GameHistoryScreen: React.FC<GameHistoryScreenProps> = ({
                             : 'text-[var(--primary)]'
                         }`}
                       >
-                        {isWin ? 'VICTORY' : isLoss ? 'DEFEAT' : 'DRAW'}
+                        {game.result === 'TIMEOUT'
+                          ? isWin
+                            ? '⏱ WON ON TIME'
+                            : '⏱ LOST ON TIME'
+                          : isWin
+                          ? 'VICTORY'
+                          : isLoss
+                          ? 'DEFEAT'
+                          : 'DRAW'}
                       </span>
                     </div>
 

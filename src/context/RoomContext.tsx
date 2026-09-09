@@ -14,6 +14,8 @@ import {
   RoomPlayer,
   CoinTossChoice,
   ChessSide,
+  UserProfile,
+  TimeControl,
 } from '../types';
 import {
   createRoom as apiCreateRoom,
@@ -44,7 +46,7 @@ export interface RoomContextType {
   opponent: RoomPlayer | null;
   myChessColor: ChessSide | null;
   tossWinner: RoomPlayer | null;
-  createRoom: (settings?: { timer?: string; truthOrDare?: boolean }) => Promise<RoomDocument>;
+  createRoom: (settings?: { timer?: string; timeControl?: TimeControl; truthOrDare?: boolean }) => Promise<RoomDocument>;
   joinRoom: (code: string) => Promise<RoomDocument>;
   leaveRoom: () => Promise<void>;
   leaveCompletedGame: () => Promise<void>;
@@ -193,7 +195,7 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     currentRoom?.players.find((p) => p.uid === currentRoom.tossWinnerUid) || null;
 
   // Actions
-  const createRoomAction = async (settings?: { timer?: string; truthOrDare?: boolean }): Promise<RoomDocument> => {
+  const createRoomAction = async (settings?: { timer?: string; timeControl?: TimeControl; truthOrDare?: boolean }): Promise<RoomDocument> => {
     if (!userProfile || !userProfile.uid) {
       const authErr = new Error('AUTH_REQUIRED');
       console.error('[CreateRoom Error]', {

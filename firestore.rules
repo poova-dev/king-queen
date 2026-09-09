@@ -109,6 +109,73 @@ service cloud.firestore {
       );
 
       allow delete: if false;
+
+      // ── In-game emoji reactions (Phase A) ──────────────────────────
+      match /reactions/{reactionId} {
+        // Only room participants can read or create reactions
+        allow read: if isRoomParticipant(roomId);
+        allow create: if isRoomParticipant(roomId)
+                      && request.resource.data.uid == request.auth.uid;
+        // Reactions are permanent once written; no edit/delete
+        allow update, delete: if false;
+      }
+    }
+
+    // ====================================================
+    // TRUTH OR DARE MULTIPLAYER ROOMS (STEP 18.2)
+    // ====================================================
+
+    function isTruthDareRoomParticipant(roomData) {
+      return isAuthenticated() && (
+        roomData.players[0].uid == request.auth.uid ||
+        (roomData.players.size() > 1 && roomData.players[1].uid == request.auth.uid)
+      );
+    }
+
+    match /truthDareRooms/{roomId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated()
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.gameType == 'TRUTH_DARE'
+                    && request.resource.data.maxPlayers == 2
+                    && request.resource.data.status == 'WAITING'
+                    && request.resource.data.players.size() == 1
+                    && request.resource.data.players[0].uid == request.auth.uid;
+
+      allow update: if isAuthenticated() && (
+        (resource.data.status == 'WAITING' && resource.data.players.size() < 2)
+        ||
+        isTruthDareRoomParticipant(resource.data)
+      );
+
+      allow delete: if false;
+    }
+
+    // ====================================================
+    // TRUTH OR DARE CUSTOM DECKS (PHASE D)
+    // ====================================================
+
+    match /truthDareDecks/{deckId} {
+      // Authenticated users can read public decks or their own private decks
+      allow read: if isAuthenticated() && (
+        resource.data.visibility == 'PUBLIC' ||
+        resource.data.ownerUid == request.auth.uid
+      );
+
+      // Users can create decks only for themselves
+      allow create: if isAuthenticated()
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() >= 1;
+
+      // Only deck owner can update or delete their deck
+      allow update: if isAuthenticated()
+                    && resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.ownerUid == request.auth.uid;
+
+      allow delete: if isAuthenticated()
+                    && resource.data.ownerUid == request.auth.uid;
     }
 
     // ====================================================
@@ -132,5 +199,6 @@ service cloud.firestore {
     }
   }
 }
+
 
 

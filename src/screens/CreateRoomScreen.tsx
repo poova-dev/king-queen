@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Timer, Sword, Heart, AlertCircle, Loader2 } from 'lucide-react';
+import { Timer, Sword, Heart, AlertCircle, Loader2, Zap } from 'lucide-react';
 import { Button, Card } from '../components/UI';
-import { UserProfile, getOppositeIdentity } from '../types';
+import { UserProfile, getOppositeIdentity, TimeControlType } from '../types';
 import { useRoom } from '../hooks/useRoom';
+import { TIME_CONTROL_PRESETS } from '../services/timerService';
 
 interface CreateRoomScreenProps {
   user: UserProfile;
@@ -12,12 +13,18 @@ interface CreateRoomScreenProps {
 
 export const CreateRoomScreen = ({ user, onBack, onCreated }: CreateRoomScreenProps) => {
   const { createRoom, roomLoading, roomError, clearError } = useRoom();
-  const [timer, setTimer] = useState('No Timer');
+  const [selectedTimeControl, setSelectedTimeControl] = useState<TimeControlType>('RAPID');
   const [truthOrDare, setTruthOrDare] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const timers = ['No Timer', '10 Minutes', '15 Minutes', '30 Minutes'];
+  const timeControlOptions: { type: TimeControlType; label: string; duration: string; icon: string }[] = [
+    { type: 'BULLET', label: 'BULLET', duration: '1 MIN', icon: '⚡' },
+    { type: 'BLITZ', label: 'BLITZ', duration: '3 MIN', icon: '🔥' },
+    { type: 'RAPID', label: 'RAPID', duration: '10 MIN', icon: '♟' },
+    { type: 'CLASSIC', label: 'CLASSIC', duration: '15 MIN', icon: '👑' },
+  ];
+
   const creatorRole = user.identity;
   const opponentRole = getOppositeIdentity(creatorRole);
 
@@ -28,7 +35,12 @@ export const CreateRoomScreen = ({ user, onBack, onCreated }: CreateRoomScreenPr
     clearError();
 
     try {
-      const room = await createRoom({ timer, truthOrDare });
+      const chosenControl = TIME_CONTROL_PRESETS[selectedTimeControl];
+      const room = await createRoom({
+        timer: `${chosenControl.initialTime / 60000} Minutes`,
+        timeControl: chosenControl,
+        truthOrDare,
+      });
       onCreated(room);
     } catch (err: any) {
       console.error('[CreateRoom Error]', {
@@ -174,29 +186,49 @@ export const CreateRoomScreen = ({ user, onBack, onCreated }: CreateRoomScreenPr
           </Card>
         </div>
 
-        {/* Timer Selection */}
+        {/* Time Control Selection */}
         <div className="flex flex-col gap-3">
-          <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-widest ml-1">
-            Match Timer
-          </label>
+          <div className="flex items-center justify-between ml-1">
+            <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1.5">
+              <Timer className="w-3.5 h-3.5 text-[var(--primary)]" />
+              Time Control
+            </label>
+            <span className="text-[10px] text-[var(--primary)] font-semibold tracking-wider uppercase">
+              Select Battle Time
+            </span>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            {timers.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTimer(t)}
-                className={`
-                  flex items-center gap-2 px-4 py-3.5 rounded-xl border transition-all text-xs font-medium
-                  ${
-                    timer === t
-                      ? 'bg-[var(--surface-light)] border-[var(--primary)] text-[var(--text)]'
-                      : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text-muted)]'
-                  }
-                `}
-              >
-                <Timer className={`w-4 h-4 ${timer === t ? 'text-[var(--primary)]' : 'text-current'}`} />
-                {t}
-              </button>
-            ))}
+            {timeControlOptions.map((option) => {
+              const isSelected = selectedTimeControl === option.type;
+              return (
+                <button
+                  key={option.type}
+                  type="button"
+                  onClick={() => setSelectedTimeControl(option.type)}
+                  className={`
+                    relative flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all duration-200 text-center
+                    ${
+                      isSelected
+                        ? 'bg-[var(--surface-light)] border-[var(--primary)] shadow-[0_0_20px_rgba(184,155,94,0.18)] ring-1 ring-[var(--primary)]/40 text-[var(--text)]'
+                        : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)]/40'
+                    }
+                  `}
+                >
+                  <span className="text-lg mb-1">{option.icon}</span>
+                  <span className={`text-xs font-bold tracking-wider uppercase ${isSelected ? 'text-[var(--primary)]' : 'text-[var(--text)]'}`}>
+                    {option.label}
+                  </span>
+                  <span className="text-[11px] font-mono font-medium opacity-80 mt-0.5">
+                    {option.duration}
+                  </span>
+
+                  {isSelected && (
+                    <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[var(--primary)] shadow-[0_0_6px_var(--primary)]" />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

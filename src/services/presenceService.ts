@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { RoomDocument, PlayerConnectionStatus } from '../types';
+import { calculateCurrentRemainingTime } from './timerService';
 
 export const DISCONNECT_GRACE_PERIOD = 60_000; // 60 seconds
 
@@ -63,6 +64,17 @@ export const markPlayerOnline = async (roomId: string, uid: string): Promise<voi
           disconnectedAt: null,
           graceExpiresAt: null,
         };
+
+        // Resume timer if it was paused for disconnect
+        if (roomData.gameState.timer && roomData.gameState.timer.status === 'PAUSED') {
+          updatePayload['gameState.timer.status'] = 'RUNNING';
+          updatePayload['gameState.timer.timerStartedAt'] = serverTimestamp();
+          updatePayload['gameState.timer.timerPausedAt'] = null;
+          if (import.meta.env?.DEV) {
+            console.log('[Timer] Resumed after reconnect');
+          }
+        }
+
         if (import.meta.env?.DEV) {
           console.info(`[Presence] Player ${uid} reconnected. Disconnect state cleared.`);
         }
@@ -125,6 +137,22 @@ export const markPlayerReconnecting = async (roomId: string, uid: string): Promi
           graceExpiresAt: expiresAt,
         };
 
+        // Pause timer during disconnect grace period so chess time is not consumed
+        const timer = roomData.gameState.timer;
+        if (timer && timer.status === 'RUNNING' && timer.activeTimerColor) {
+          const remaining = calculateCurrentRemainingTime(timer, timer.activeTimerColor, now);
+          if (timer.activeTimerColor === 'WHITE') {
+            updatePayload['gameState.timer.whiteTimeRemaining'] = remaining;
+          } else {
+            updatePayload['gameState.timer.blackTimeRemaining'] = remaining;
+          }
+          updatePayload['gameState.timer.status'] = 'PAUSED';
+          updatePayload['gameState.timer.timerPausedAt'] = serverTimestamp();
+          if (import.meta.env?.DEV) {
+            console.log('[Timer] Paused for disconnect');
+          }
+        }
+
         if (import.meta.env?.DEV) {
           console.info(
             `[Presence] Disconnect grace period started for ${uid}. Expires in ${DISCONNECT_GRACE_PERIOD / 1000}s`
@@ -169,7 +197,7 @@ export const startDisconnectGracePeriod = async (
     const now = Date.now();
     const expiresAt = now + DISCONNECT_GRACE_PERIOD;
 
-    transaction.update(roomRef, {
+    const updatePayload: Record<string, any> = {
       'gameState.disconnectState': {
         status: 'WAITING_FOR_RECONNECT',
         disconnectedUid,
@@ -177,7 +205,25 @@ export const startDisconnectGracePeriod = async (
         graceExpiresAt: expiresAt,
       },
       updatedAt: serverTimestamp(),
-    });
+    };
+
+    // Pause timer during disconnect grace period so chess time is not consumed
+    const timer = room.gameState.timer;
+    if (timer && timer.status === 'RUNNING' && timer.activeTimerColor) {
+      const remaining = calculateCurrentRemainingTime(timer, timer.activeTimerColor, now);
+      if (timer.activeTimerColor === 'WHITE') {
+        updatePayload['gameState.timer.whiteTimeRemaining'] = remaining;
+      } else {
+        updatePayload['gameState.timer.blackTimeRemaining'] = remaining;
+      }
+      updatePayload['gameState.timer.status'] = 'PAUSED';
+      updatePayload['gameState.timer.timerPausedAt'] = serverTimestamp();
+      if (import.meta.env?.DEV) {
+        console.log('[Timer] Paused for disconnect');
+      }
+    }
+
+    transaction.update(roomRef, updatePayload);
   });
 };
 
@@ -255,12 +301,17 @@ export const claimVictoryForDisconnect = async (
       'gameState.winnerUid': claimantUid,
       'gameState.disconnectedUid': opponentUid,
       'gameState.disconnectState.status': 'EXPIRED',
+      'gameState.timer.status': 'STOPPED',
       'gameState.finishedAt': serverTimestamp(),
       'gameState.updatedAt': serverTimestamp(),
       'room.status': 'FINISHED',
       status: 'FINISHED',
       updatedAt: serverTimestamp(),
     });
+
+    if (import.meta.env?.DEV) {
+      console.log('[Timer] Game finished');
+    }
 
     if (import.meta.env?.DEV) {
       console.info(

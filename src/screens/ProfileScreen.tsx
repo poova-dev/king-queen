@@ -4,7 +4,7 @@ import { Avatar, Card, Button } from '../components/UI';
 import { UserProfile, UserGameHistoryRecord } from '../types';
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../hooks/useAuth';
-import { getRecentGames, formatGameResult, formatGameDate } from '../services/gameHistoryService';
+import { getRecentGames, formatGameResult, formatGameDate, calculateUserGameStats } from '../services/gameHistoryService';
 
 interface ProfileScreenProps {
   user: UserProfile;
@@ -14,6 +14,8 @@ interface ProfileScreenProps {
   onStartGame?: () => void;
   onBack: () => void;
   onLogout?: () => void;
+  /** Increment to force a re-fetch of recent game history (e.g., after a game ends) */
+  refreshKey?: number;
 }
 
 export const ProfileScreen = ({
@@ -24,6 +26,7 @@ export const ProfileScreen = ({
   onStartGame,
   onBack,
   onLogout,
+  refreshKey,
 }: ProfileScreenProps) => {
   const { theme } = useTheme();
   const { logout } = useAuth();
@@ -54,12 +57,11 @@ export const ProfileScreen = ({
     return () => {
       isMounted = false;
     };
-  }, [user.uid]);
+  }, [user.uid, refreshKey]);
 
-  const gamesPlayed = user.gamesPlayed ?? 0;
-  const wins = user.wins ?? 0;
-  const losses = user.losses ?? 0;
-  const winRate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : 0;
+  const stats = calculateUserGameStats(recentGames, user);
+  const chessStats = stats.chess;
+  const tdStats = stats.truthDare;
 
   const handleLogout = async () => {
     try {
@@ -88,7 +90,7 @@ export const ProfileScreen = ({
       </header>
 
       {/* Profile Card */}
-      <div className="flex flex-col items-center gap-4 py-4 mb-8">
+      <div className="flex flex-col items-center gap-4 py-4 mb-6">
         <div className="relative">
           <Avatar 
             size="xl" 
@@ -119,35 +121,35 @@ export const ProfileScreen = ({
           )}
         </div>
 
-        {/* Quick Stats Grid with Win Rate */}
-        <div className="w-full grid grid-cols-4 gap-2 mt-4">
+        {/* Quick Overall Summary Grid */}
+        <div className="w-full grid grid-cols-4 gap-2 mt-2">
           <div className="flex flex-col items-center p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
             <span className="text-base font-display font-semibold text-[var(--text)]">
-              {gamesPlayed}
+              {chessStats.gamesPlayed + tdStats.gamesPlayed}
             </span>
             <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] text-center font-medium">
-              Battles
+              Total Games
             </span>
           </div>
           <div className="flex flex-col items-center p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
             <span className="text-base font-display font-semibold text-emerald-400">
-              {wins}
+              {chessStats.wins}
             </span>
             <span className="text-[9px] uppercase tracking-wider text-emerald-300 font-medium">
-              Wins
+              Chess Wins
             </span>
           </div>
           <div className="flex flex-col items-center p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20">
             <span className="text-base font-display font-semibold text-rose-400">
-              {losses}
+              {tdStats.challengesCompleted}
             </span>
             <span className="text-[9px] uppercase tracking-wider text-rose-300 font-medium">
-              Losses
+              Challenges
             </span>
           </div>
           <div className="flex flex-col items-center p-2.5 rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/30">
             <span className="text-base font-display font-semibold text-[var(--primary)]">
-              {winRate}%
+              {chessStats.winRate}%
             </span>
             <span className="text-[9px] uppercase tracking-wider text-[var(--primary)] font-medium">
               Win Rate
@@ -155,11 +157,86 @@ export const ProfileScreen = ({
           </div>
         </div>
 
+        {/* Detailed Game Statistics Cards */}
+        <div className="w-full flex flex-col gap-3 mt-3">
+          {/* Chess Stats Card */}
+          <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-3 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">♟</span>
+                <h3 className="text-xs font-display font-bold tracking-wider uppercase text-[var(--text)]">
+                  Chess Statistics
+                </h3>
+              </div>
+              <span className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-wider">
+                {chessStats.winRate}% Win Rate
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 rounded-xl bg-[var(--background)] border border-[var(--border)]/70">
+                <span className="font-bold text-[var(--text)]">{chessStats.gamesPlayed}</span>
+                <span className="block text-[9px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Battles</span>
+              </div>
+              <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                <span className="font-bold text-emerald-400">{chessStats.wins}</span>
+                <span className="block text-[9px] text-emerald-300 uppercase tracking-wider mt-0.5">Victories</span>
+              </div>
+              <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                <span className="font-bold text-rose-400">{chessStats.losses}</span>
+                <span className="block text-[9px] text-rose-300 uppercase tracking-wider mt-0.5">Defeats</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] pt-1 border-t border-[var(--border)]/40 px-1">
+              <span>Draws: <strong className="text-[var(--text)]">{chessStats.draws}</strong></span>
+              <span>Checkmates: <strong className="text-[var(--text)]">{chessStats.checkmates}</strong></span>
+              <span>Avg Moves: <strong className="text-[var(--text)]">{chessStats.avgMovesPerGame}</strong></span>
+            </div>
+          </div>
+
+          {/* Truth / Dare Stats Card */}
+          <div className="p-4 rounded-2xl bg-[var(--surface)] border border-rose-500/30 flex flex-col gap-3 shadow-sm bg-gradient-to-br from-[var(--surface)] to-rose-950/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🎭</span>
+                <h3 className="text-xs font-display font-bold tracking-wider uppercase text-rose-300">
+                  Truth or Dare Statistics
+                </h3>
+              </div>
+              <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
+                {tdStats.challengesCompleted} Challenges
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 rounded-xl bg-[var(--background)] border border-[var(--border)]/70">
+                <span className="font-bold text-[var(--text)]">{tdStats.gamesPlayed}</span>
+                <span className="block text-[9px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Games</span>
+              </div>
+              <div className="p-2 rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/20">
+                <span className="font-bold text-[var(--primary)]">{tdStats.truthsCompleted}</span>
+                <span className="block text-[9px] text-[var(--primary)] uppercase tracking-wider mt-0.5">Truths</span>
+              </div>
+              <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                <span className="font-bold text-rose-400">{tdStats.daresCompleted}</span>
+                <span className="block text-[9px] text-rose-300 uppercase tracking-wider mt-0.5">Dares</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] pt-1 border-t border-rose-500/20 px-1">
+              <span>Rounds: <strong className="text-[var(--text)]">{tdStats.roundsPlayed}</strong></span>
+              <span>Challenger: <strong className="text-[var(--text)]">{tdStats.challengerRounds}</strong></span>
+              <span>Judge: <strong className="text-[var(--text)]">{tdStats.judgeRounds}</strong></span>
+            </div>
+          </div>
+        </div>
+
         {/* View Game History Quick Button */}
         {onViewHistory && (
           <button
             onClick={onViewHistory}
-            className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[var(--surface-light)] to-[var(--surface)] border border-[var(--primary)]/30 hover:border-[var(--primary)] text-xs font-semibold text-[var(--primary)] tracking-wider uppercase transition-all flex items-center justify-between group shadow-sm"
+            className="w-full mt-1 py-3 px-4 rounded-xl bg-gradient-to-r from-[var(--surface-light)] to-[var(--surface)] border border-[var(--primary)]/30 hover:border-[var(--primary)] text-xs font-semibold text-[var(--primary)] tracking-wider uppercase transition-all flex items-center justify-between group shadow-sm"
           >
             <div className="flex items-center gap-2.5">
               <History className="w-4 h-4 text-[var(--primary)]" />
@@ -251,7 +328,9 @@ export const ProfileScreen = ({
                           vs {game.opponentName}
                         </span>
                         <span className="text-[10px] text-[var(--text-muted)]">
-                          {game.playerColor === 'WHITE' ? '♔ WHITE' : '♚ BLACK'} • {game.reason} • {game.totalMoves} Moves
+                          {game.gameType === 'TRUTH_DARE'
+                            ? `🎭 TRUTH OR DARE • ${game.roundsPlayed || 0} Rounds • ${game.completedChallenges || 0} Challenges`
+                            : `${game.playerColor === 'WHITE' ? '♔ WHITE' : '♚ BLACK'} • ${game.reason} • ${game.totalMoves || 0} Moves`}
                         </span>
                       </div>
                     </div>

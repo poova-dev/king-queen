@@ -9,6 +9,7 @@ import {
   getDocs,
   limit,
   orderBy,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Chess } from 'chess.js';
@@ -25,6 +26,10 @@ import {
   GameEndReason,
   GameResult,
 } from '../types';
+import {
+  DEFAULT_TIME_CONTROL,
+  calculateCurrentRemainingTime,
+} from './timerService';
 
 export const INITIAL_CHESS_FEN =
   'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -76,6 +81,8 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         console.log('[Game] Creating initial gameState');
       }
 
+      const initialTime = room.timeControl?.initialTime || DEFAULT_TIME_CONTROL.initialTime;
+
       const initialGameState: GameStateDocument = {
         fen: INITIAL_CHESS_FEN,
         turn: 'WHITE',
@@ -88,6 +95,14 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         winnerUid: null,
         resignedBy: null,
         endReason: null,
+        timer: {
+          whiteTimeRemaining: initialTime,
+          blackTimeRemaining: initialTime,
+          activeTimerColor: 'WHITE',
+          timerStartedAt: serverTimestamp(),
+          timerPausedAt: null,
+          status: 'RUNNING',
+        },
         finishedAt: null,
         statsProcessed: false,
         rematchRequest: null,
@@ -109,6 +124,12 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         'gameState.winnerUid': null,
         'gameState.resignedBy': null,
         'gameState.endReason': null,
+        'gameState.timer.whiteTimeRemaining': initialTime,
+        'gameState.timer.blackTimeRemaining': initialTime,
+        'gameState.timer.activeTimerColor': 'WHITE',
+        'gameState.timer.timerStartedAt': serverTimestamp(),
+        'gameState.timer.timerPausedAt': null,
+        'gameState.timer.status': 'RUNNING',
         'gameState.finishedAt': null,
         'gameState.statsProcessed': false,
         'gameState.rematchRequest': null,
@@ -116,6 +137,10 @@ export const initializeGameState = async (roomId: string): Promise<GameStateDocu
         'gameState.updatedAt': serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      if (import.meta.env?.DEV) {
+        console.log('[Timer] Initialized');
+      }
 
       return initialGameState;
     });
@@ -210,6 +235,38 @@ export const makeMove = async (
     if (currentGameState.turn !== player.chessColor) {
       throw new Error('NOT_YOUR_TURN');
     }
+
+    // Authoritative Timer Validation & Deduction
+    const initialTime = room.timeControl?.initialTime || DEFAULT_TIME_CONTROL.initialTime;
+    const currentTimer = currentGameState.timer || {
+      whiteTimeRemaining: initialTime,
+      blackTimeRemaining: initialTime,
+      activeTimerColor: currentGameState.turn,
+      timerStartedAt: currentGameState.updatedAt || new Date(),
+      timerPausedAt: null,
+      status: 'RUNNING' as const,
+    };
+
+    // Calculate remaining time for moving player
+    const nowMs = Date.now();
+    const remainingTime = calculateCurrentRemainingTime(currentTimer, player.chessColor, nowMs);
+
+    // Reject move if player's clock has expired
+    if (remainingTime <= 0) {
+      if (import.meta.env?.DEV) {
+        console.log(`[Timer] Move rejected: TIME_EXPIRED for ${player.chessColor}`);
+      }
+      throw new Error('TIME_EXPIRED');
+    }
+
+    const updatedWhiteTime =
+      player.chessColor === 'WHITE'
+        ? remainingTime
+        : (currentTimer.whiteTimeRemaining ?? initialTime);
+    const updatedBlackTime =
+      player.chessColor === 'BLACK'
+        ? remainingTime
+        : (currentTimer.blackTimeRemaining ?? initialTime);
 
     // Instantiate authoritative chess engine with move history replay for accurate 3-fold repetition detection
     const chess = new Chess();
@@ -345,6 +402,9 @@ export const makeMove = async (
     // Keep up to last 100 moves to prevent document size explosion
     const updatedHistory = [...(currentGameState.moveHistory || []), historyEntry].slice(-100);
 
+    const nextTimerStatus = newStatus === 'FINISHED' ? 'STOPPED' : 'RUNNING';
+    const nextActiveTimerColor = newStatus === 'FINISHED' ? null : nextTurn;
+
     const updatedGameState: GameStateDocument = {
       ...currentGameState,
       fen: newFen,
@@ -357,6 +417,18 @@ export const makeMove = async (
       version: currentGameState.version + 1,
       winnerUid,
       endReason,
+      pendingPromotion: null,
+      ...(currentGameState.drawOffer?.status === 'PENDING'
+        ? { drawOffer: { ...currentGameState.drawOffer, status: 'EXPIRED' as const } }
+        : {}),
+      timer: {
+        whiteTimeRemaining: updatedWhiteTime,
+        blackTimeRemaining: updatedBlackTime,
+        activeTimerColor: nextActiveTimerColor,
+        timerStartedAt: serverTimestamp(),
+        timerPausedAt: null,
+        status: nextTimerStatus,
+      },
       ...(newStatus === 'FINISHED' ? { finishedAt: serverTimestamp() } : {}),
       updatedAt: serverTimestamp(),
     };
@@ -366,6 +438,14 @@ export const makeMove = async (
       status: newRoomStatus,
       updatedAt: serverTimestamp(),
     });
+
+    if (import.meta.env?.DEV) {
+      if (newStatus === 'FINISHED') {
+        console.log('[Timer] Game finished');
+      } else {
+        console.log(`[Timer] Turn switched to ${nextTurn}`);
+      }
+    }
 
     return updatedGameState;
   });
@@ -442,12 +522,201 @@ export const resignGame = async (
       'gameState.endReason': 'RESIGNATION',
       'gameState.winnerUid': opponent.uid,
       'gameState.resignedBy': resigningUid,
+      'gameState.timer.status': 'STOPPED',
       'gameState.finishedAt': serverTimestamp(),
       'gameState.updatedAt': serverTimestamp(),
       status: 'FINISHED',
       updatedAt: serverTimestamp(),
     });
+
+    if (import.meta.env?.DEV) {
+      console.log('[Timer] Game finished');
+    }
   });
+};
+
+/**
+ * Draw offer auto-expiration timeout (30 seconds)
+ */
+export const DRAW_OFFER_TIMEOUT_MS = 30 * 1000;
+
+/**
+ * Checks if a pending draw offer has expired (30 seconds)
+ */
+export const isDrawOfferExpired = (offeredAt?: any): boolean => {
+  if (!offeredAt) return false;
+  const time =
+    typeof offeredAt === 'number'
+      ? offeredAt
+      : offeredAt?.toMillis
+      ? offeredAt.toMillis()
+      : typeof offeredAt === 'string'
+      ? new Date(offeredAt).getTime()
+      : 0;
+  if (!time) return false;
+  return Date.now() - time > DRAW_OFFER_TIMEOUT_MS;
+};
+
+/**
+ * Propose a draw to the opponent.
+ * Requires:
+ * - Room and game status PLAYING
+ * - User is a room participant
+ * - No active, unexpired draw offer currently pending
+ */
+export const offerDraw = async (roomId: string, uid: string): Promise<void> => {
+  const roomRef = doc(db, 'rooms', roomId);
+
+  await runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('ROOM_NOT_FOUND');
+    }
+
+    const room = roomSnap.data() as RoomDocument;
+    const gameState = room.gameState;
+    if (
+      !gameState ||
+      !['PLAYING', 'CHECK'].includes(gameState.status) ||
+      !['PLAYING', 'CHECK'].includes(room.status as string)
+    ) {
+      throw new Error('GAME_NOT_PLAYING');
+    }
+
+    const isParticipant = room.players.some((p) => p.uid === uid);
+    if (!isParticipant) {
+      throw new Error('NOT_ROOM_PARTICIPANT');
+    }
+
+    // Guard: Only one active unexpired draw offer allowed
+    if (gameState.drawOffer && gameState.drawOffer.status === 'PENDING') {
+      if (!isDrawOfferExpired(gameState.drawOffer.offeredAt)) {
+        throw new Error('DRAW_OFFER_ACTIVE');
+      }
+    }
+
+    const now = Date.now();
+    transaction.update(roomRef, {
+      'gameState.drawOffer': {
+        offeredBy: uid,
+        offeredAt: now,
+        expiresAt: now + DRAW_OFFER_TIMEOUT_MS,
+        status: 'PENDING',
+      },
+      updatedAt: serverTimestamp(),
+    });
+
+    if (import.meta.env?.DEV) {
+      console.log(`[Game] Draw offer proposed by ${uid} in room ${roomId}`);
+    }
+  });
+};
+
+/**
+ * Respond to an active draw offer.
+ * If accepted: atomically ends the game with endReason = DRAW, stops timer, updates stats & history.
+ * If declined: sets drawOffer status = DECLINED.
+ */
+export const respondToDrawOffer = async (
+  roomId: string,
+  uid: string,
+  accept: boolean
+): Promise<void> => {
+  const roomRef = doc(db, 'rooms', roomId);
+
+  await runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('ROOM_NOT_FOUND');
+    }
+
+    const room = roomSnap.data() as RoomDocument;
+    const gameState = room.gameState;
+    if (!gameState) {
+      throw new Error('GAME_NOT_FOUND');
+    }
+
+    if (gameState.status === 'FINISHED' || room.status === 'FINISHED') {
+      throw new Error('GAME_ALREADY_FINISHED');
+    }
+
+    const isParticipant = room.players.some((p) => p.uid === uid);
+    if (!isParticipant) {
+      throw new Error('NOT_ROOM_PARTICIPANT');
+    }
+
+    const drawOffer = gameState.drawOffer;
+    if (!drawOffer || drawOffer.status !== 'PENDING') {
+      throw new Error('NO_ACTIVE_DRAW_OFFER');
+    }
+
+    // Only the opponent (recipient) can accept or decline
+    if (drawOffer.offeredBy === uid) {
+      throw new Error('CANNOT_RESPOND_OWN_OFFER');
+    }
+
+    // Check 30-second expiration window
+    if (isDrawOfferExpired(drawOffer.offeredAt)) {
+      transaction.update(roomRef, {
+        'gameState.drawOffer.status': 'EXPIRED',
+        updatedAt: serverTimestamp(),
+      });
+      throw new Error('DRAW_OFFER_EXPIRED');
+    }
+
+    if (!accept) {
+      transaction.update(roomRef, {
+        'gameState.drawOffer.status': 'DECLINED',
+        updatedAt: serverTimestamp(),
+      });
+      if (import.meta.env?.DEV) {
+        console.log(`[Game] Draw offer declined by ${uid} in room ${roomId}`);
+      }
+      return;
+    }
+
+    // Accepted: Conclude battle peacefully as DRAW
+    transaction.update(roomRef, {
+      'gameState.status': 'FINISHED',
+      'gameState.winnerUid': null,
+      'gameState.endReason': 'DRAW',
+      'gameState.drawOffer.status': 'ACCEPTED',
+      'gameState.timer.status': 'STOPPED',
+      'gameState.finishedAt': serverTimestamp(),
+      'gameState.updatedAt': serverTimestamp(),
+      status: 'FINISHED',
+      updatedAt: serverTimestamp(),
+    });
+
+    if (import.meta.env?.DEV) {
+      console.log(`[Game] Draw offer accepted by ${uid}. Match concluded peacefully.`);
+    }
+  });
+
+  // Idempotently process game history & player stats for draw
+  processGameStatsAndHistory(roomId).catch((err) => {
+    if (import.meta.env?.DEV) {
+      console.warn('[processGameStatsAndHistory Draw Error]', err);
+    }
+  });
+};
+
+/**
+ * Updates or clears the pendingPromotion state in Firestore.
+ * Allows the opponent to see "Opponent is choosing promotion..." in real time.
+ */
+export const setPendingPromotionState = async (
+  roomId: string,
+  uid: string,
+  promotionState: { from: string; to: string } | null
+): Promise<void> => {
+  if (!roomId) return;
+  const roomRef = doc(db, 'rooms', roomId);
+  const payload = promotionState ? { ...promotionState, playerUid: uid } : null;
+  await updateDoc(roomRef, {
+    'gameState.pendingPromotion': payload,
+    updatedAt: serverTimestamp(),
+  }).catch(() => {});
 };
 
 /**
@@ -750,6 +1019,8 @@ export const respondToRematch = async (
       ready: true,
     }));
 
+    const rematchTime = room.timeControl?.initialTime || DEFAULT_TIME_CONTROL.initialTime;
+
     transaction.update(roomRef, {
       players: updatedPlayers,
       'gameState.fen': INITIAL_CHESS_FEN,
@@ -763,6 +1034,12 @@ export const respondToRematch = async (
       'gameState.winnerUid': null,
       'gameState.resignedBy': null,
       'gameState.endReason': null,
+      'gameState.timer.whiteTimeRemaining': rematchTime,
+      'gameState.timer.blackTimeRemaining': rematchTime,
+      'gameState.timer.activeTimerColor': 'WHITE',
+      'gameState.timer.timerStartedAt': serverTimestamp(),
+      'gameState.timer.timerPausedAt': null,
+      'gameState.timer.status': 'RUNNING',
       'gameState.finishedAt': null,
       'gameState.statsProcessed': false,
       'gameState.rematchRequest': null,
@@ -772,6 +1049,10 @@ export const respondToRematch = async (
       status: 'PLAYING',
       updatedAt: serverTimestamp(),
     });
+
+    if (import.meta.env?.DEV) {
+      console.log('[Timer] Initialized');
+    }
   });
 };
 
@@ -849,6 +1130,8 @@ export const mapGameError = (error: any): string => {
   const code = error?.message || error?.code || '';
 
   switch (code) {
+    case 'TIME_EXPIRED':
+      return 'Your time has expired. You cannot make a move.';
     case 'NOT_YOUR_TURN':
       return "It is not your turn. Please wait for your opponent's move.";
     case 'ILLEGAL_MOVE':
@@ -857,6 +1140,14 @@ export const mapGameError = (error: any): string => {
       return 'This game is currently not active.';
     case 'GAME_ALREADY_FINISHED':
       return 'This battle has already ended.';
+    case 'DRAW_OFFER_ACTIVE':
+      return 'A draw offer is already pending for this match.';
+    case 'DRAW_OFFER_EXPIRED':
+      return 'The draw offer has expired.';
+    case 'NO_ACTIVE_DRAW_OFFER':
+      return 'No active draw offer found.';
+    case 'CANNOT_RESPOND_OWN_OFFER':
+      return 'You cannot respond to your own draw offer.';
     case 'NOT_ROOM_PARTICIPANT':
     case 'NOT_AUTHORIZED':
       return 'You are not part of this battle.';

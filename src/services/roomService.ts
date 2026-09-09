@@ -20,10 +20,12 @@ import {
   CoinTossChoice,
   ChessSide,
   UserProfile,
+  TimeControl,
   getOppositeCoinChoice,
   getOppositeChessSide,
 } from '../types';
 import { INITIAL_CHESS_FEN } from './gameService';
+import { DEFAULT_TIME_CONTROL } from './timerService';
 
 /**
  * Character set for room codes
@@ -120,7 +122,7 @@ export const generateUniqueRoomCode = async (maxAttempts = 5): Promise<string> =
  */
 export const createRoom = async (
   user: UserProfile,
-  settings?: { timer?: string; truthOrDare?: boolean }
+  settings?: { timer?: string; timeControl?: TimeControl; truthOrDare?: boolean }
 ): Promise<RoomDocument> => {
   if (!user.uid) {
     const authErr = new Error('AUTH_REQUIRED');
@@ -160,7 +162,8 @@ export const createRoom = async (
       coinResult: null,
       tossWinnerUid: null,
       maxPlayers: 2,
-      timer: settings?.timer || 'No Timer',
+      timer: settings?.timer || '10 Minutes',
+      timeControl: settings?.timeControl || DEFAULT_TIME_CONTROL,
       truthOrDare: settings?.truthOrDare ?? true,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),

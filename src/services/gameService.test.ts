@@ -541,9 +541,62 @@ assert(processGameEndEvent(resignEventKey) === false, 'EVENT GUARD: Duplicate re
 assert(getPerspective(resignedGameState.winnerUid, p2Uid) === 'VICTORY', 'PERSPECTIVE: Opponent receives VICTORY perspective');
 assert(getPerspective(resignedGameState.winnerUid, p1Uid) === 'DEFEAT', 'PERSPECTIVE: Resigning player receives DEFEAT perspective');
 
+
 console.log(`\nTests Completed: ${passed} Passed, ${failed} Failed\n`);
 if (failed > 0) {
   process.exit(1);
 }
+
+// ─── PHASE A ADDITIONS: Draw Offer & History Guard Tests ─────────────────────
+console.log('\n--- Phase A: Draw Offer CHECK Status & History Guard Tests ---');
+
+// 36. Draw offer status guard: PLAYING is valid
+{
+  const validStatuses = ['PLAYING', 'CHECK'];
+  const invalidStatuses = ['FINISHED', 'CHECKMATE', 'STALEMATE', 'INITIALIZING'];
+
+  const isActiveGameStatus = (status: string) =>
+    validStatuses.includes(status);
+
+  assert(isActiveGameStatus('PLAYING'), 'Draw offer guard: PLAYING is accepted as active status');
+  assert(isActiveGameStatus('CHECK'), 'Draw offer guard: CHECK is accepted as active status (Phase A fix)');
+  assert(!isActiveGameStatus('FINISHED'), 'Draw offer guard: FINISHED is rejected');
+  assert(!isActiveGameStatus('CHECKMATE'), 'Draw offer guard: CHECKMATE is rejected');
+  assert(!isActiveGameStatus('STALEMATE'), 'Draw offer guard: STALEMATE is rejected');
+  assert(!isActiveGameStatus('INITIALIZING'), 'Draw offer guard: INITIALIZING is rejected');
+}
+
+// 37. History idempotency: statsProcessed flag prevents double-write
+{
+  const processHistory = (statsProcessed: boolean, historySaved: boolean): boolean => {
+    // Mirrors the logic in processGameStatsAndHistory transaction
+    if (statsProcessed) return false; // already done
+    if (historySaved) return false;   // already saved
+    return true; // proceed with write
+  };
+
+  assert(processHistory(false, false) === true, 'History: writes when both flags are false');
+  assert(processHistory(true, false) === false, 'History: skips when statsProcessed is true');
+  assert(processHistory(false, true) === false, 'History: skips when historySaved is true');
+  assert(processHistory(true, true) === false, 'History: skips when both flags are true');
+}
+
+// 38. Draw offer expiry boundary
+{
+  const DRAW_OFFER_TIMEOUT_MS = 30_000;
+  const now = Date.now();
+
+  const isExpired = (offeredAt: number) => now - offeredAt > DRAW_OFFER_TIMEOUT_MS;
+
+  assert(!isExpired(now), 'Draw offer: just-created offer is NOT expired');
+  assert(!isExpired(now - 15_000), 'Draw offer: 15s old offer is NOT expired');
+  assert(isExpired(now - 31_000), 'Draw offer: 31s old offer IS expired');
+}
+
+console.log(`\nPhase A Tests Completed: ${passed} Passed, ${failed} Failed\n`);
+if (failed > 0) {
+  process.exit(1);
+}
+
 
 

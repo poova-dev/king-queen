@@ -14,6 +14,10 @@ import {
   initializeGameState,
   makeMove as apiMakeMove,
   resignGame as apiResignGame,
+  offerDraw as apiOfferDraw,
+  respondToDrawOffer as apiRespondToDrawOffer,
+  setPendingPromotionState,
+  isDrawOfferExpired,
   processGameStats,
   requestRematch as apiRequestRematch,
   respondToRematch as apiRespondToRematch,
@@ -25,6 +29,9 @@ import {
   claimVictoryForDisconnect,
   mapConnectionError,
 } from '../services/presenceService';
+import { claimTimeoutVictory } from '../services/timerService';
+import { soundService } from '../services/soundService';
+import { useChessTimer } from './useChessTimer';
 
 export interface UseMultiplayerChessProps {
   roomId: string | undefined;
@@ -64,6 +71,7 @@ export const useMultiplayerChess = ({
   const [isSubmittingMove, setIsSubmittingMove] = useState<boolean>(false);
   const [isResigning, setIsResigning] = useState<boolean>(false);
   const [isClaimingVictory, setIsClaimingVictory] = useState<boolean>(false);
+  const [isClaimingTimeout, setIsClaimingTimeout] = useState<boolean>(false);
   const [disconnectSecondsRemaining, setDisconnectSecondsRemaining] = useState<number>(60);
   const [moveError, setMoveError] = useState<string | null>(null);
 
@@ -110,6 +118,55 @@ export const useMultiplayerChess = ({
       disconnectState &&
       disconnectState.status === 'WAITING_FOR_RECONNECT' &&
       disconnectState.disconnectedUid === opponentPlayer.uid
+  );
+
+  // Automatic timeout claim handler when local timer detects clock expiration
+  const handleTimeout = useCallback(
+    async (expiredColor: ChessSide) => {
+      // If opponent ran out of time and game is actively playing, claim victory
+      if (
+        roomId &&
+        userUid &&
+        !isGameOver &&
+        !isClaimingTimeout &&
+        myChessColor &&
+        expiredColor !== myChessColor
+      ) {
+        setIsClaimingTimeout(true);
+        try {
+          if (import.meta.env?.DEV) {
+            console.log(`[Timer] Auto-claiming timeout victory for ${userUid}`);
+          }
+          await claimTimeoutVictory(roomId, userUid);
+        } catch (err: any) {
+          if (import.meta.env?.DEV) {
+            console.warn('[Timer] claimTimeoutVictory handled:', err?.message || err);
+          }
+        } finally {
+          setIsClaimingTimeout(false);
+        }
+      }
+    },
+    [roomId, userUid, isGameOver, isClaimingTimeout, myChessColor]
+  );
+
+  const chessTimer = useChessTimer({
+    timer: gameState?.timer,
+    timeControl: room?.timeControl,
+    isGameActive: !isGameOver && room?.status === 'PLAYING',
+    onTimeout: handleTimeout,
+  });
+
+  const isMyTimerExpired = Boolean(
+    myChessColor &&
+      ((myChessColor === 'WHITE' && chessTimer.whiteTime <= 0) ||
+        (myChessColor === 'BLACK' && chessTimer.blackTime <= 0))
+  );
+
+  const isOpponentTimerExpired = Boolean(
+    opponentChessColor &&
+      ((opponentChessColor === 'WHITE' && chessTimer.whiteTime <= 0) ||
+        (opponentChessColor === 'BLACK' && chessTimer.blackTime <= 0))
   );
 
   // Synchronize disconnect countdown timer
@@ -200,15 +257,52 @@ export const useMultiplayerChess = ({
       try {
         chessRef.current.load(gameState.fen);
         setFen(gameState.fen);
+        const prevVersion = localVersion;
         setLocalVersion(gameState.version);
         setSelectedSquare(null);
         setLegalMoves([]);
         setMoveError(null);
+
+        // Procedural Audio: Play sound if not initial load
+        if (prevVersion > -1 && gameState.lastMove) {
+          const san = gameState.lastMove.san || '';
+          if (san.includes('#') || gameState.status === 'CHECKMATE') {
+            soundService.playCheckmateSound(roomId, gameState.version);
+          } else if (san.includes('+') || gameState.checkedColor) {
+            soundService.playCheckSound(roomId, gameState.version);
+          } else if (san.includes('x')) {
+            soundService.playCaptureSound(roomId, gameState.version);
+          } else if (san.includes('O-O')) {
+            soundService.playCastleSound(roomId, gameState.version);
+          } else if (san.includes('=')) {
+            soundService.playPromotionSound(roomId, gameState.version);
+          } else {
+            soundService.playMoveSound(roomId, gameState.version);
+          }
+        }
       } catch (err) {
         console.error('[Error loading authoritative FEN]', err);
       }
     }
-  }, [gameState, localVersion]);
+  }, [gameState, localVersion, roomId]);
+
+  // Sound triggers for game completion and start
+  useEffect(() => {
+    if (!roomId || !gameState) return;
+    if (isGameOver) {
+      if (gameState.winnerUid === userUid) {
+        soundService.playVictorySound(roomId, 'win');
+      } else if (gameState.winnerUid && gameState.winnerUid !== userUid) {
+        soundService.playDefeatSound(roomId, 'loss');
+      }
+    }
+  }, [roomId, isGameOver, gameState?.winnerUid, userUid]);
+
+  useEffect(() => {
+    if (room?.status === 'PLAYING' && gameState?.version === 0) {
+      soundService.playGameStartSound(roomId, 'start');
+    }
+  }, [room?.status, gameState?.version, roomId]);
 
   // 3. Trigger one-time player stats processing when game concludes
   useEffect(() => {
@@ -347,7 +441,7 @@ export const useMultiplayerChess = ({
   // 8. Execute Authoritative Move via Firestore Transaction
   const executeMove = useCallback(
     async (from: Square, to: Square, promotion?: PieceType) => {
-      if (!roomId || !userUid || isSubmittingMove || isGameOver) return false;
+      if (!roomId || !userUid || isSubmittingMove || isGameOver || isMyTimerExpired) return false;
 
       const chess = chessRef.current;
 
@@ -398,14 +492,14 @@ export const useMultiplayerChess = ({
         setIsSubmittingMove(false);
       }
     },
-    [roomId, userUid, isSubmittingMove, isGameOver, gameState?.fen]
+    [roomId, userUid, isSubmittingMove, isGameOver, isMyTimerExpired, gameState?.fen]
   );
 
   // 9. Square Click Handler
   const handleSquareClick = useCallback(
     (square: SquareData) => {
-      // Reject interactions if not user's turn or during transaction submission or if game is over
-      if (!isMyTurn || isSubmittingMove || isGameOver) return;
+      // Reject interactions if not user's turn, during submission, if game is over, or timer expired
+      if (!isMyTurn || isSubmittingMove || isGameOver || isMyTimerExpired) return;
 
       const sqNotation = square.notation as Square;
       const chess = chessRef.current;
@@ -430,6 +524,9 @@ export const useMultiplayerChess = ({
               to: sqNotation,
               color: myPlayerColor || 'w',
             });
+            if (roomId && userUid) {
+              setPendingPromotionState(roomId, userUid, { from: selectedSquare, to: sqNotation });
+            }
             return;
           }
 
@@ -452,7 +549,7 @@ export const useMultiplayerChess = ({
       setSelectedSquare(null);
       setLegalMoves([]);
     },
-    [isMyTurn, isSubmittingMove, isGameOver, selectedSquare, myPlayerColor, executeMove]
+    [isMyTurn, isSubmittingMove, isGameOver, selectedSquare, myPlayerColor, executeMove, roomId, userUid]
   );
 
   // 10. Promotion Callbacks
@@ -461,17 +558,56 @@ export const useMultiplayerChess = ({
       if (!pendingPromotion) return;
       executeMove(pendingPromotion.from, pendingPromotion.to, pieceType);
       setPendingPromotion(null);
+      if (roomId && userUid) {
+        setPendingPromotionState(roomId, userUid, null);
+      }
     },
-    [pendingPromotion, executeMove]
+    [pendingPromotion, executeMove, roomId, userUid]
   );
 
   const cancelPromotion = useCallback(() => {
     setPendingPromotion(null);
     setSelectedSquare(null);
     setLegalMoves([]);
-  }, []);
+    if (roomId && userUid) {
+      setPendingPromotionState(roomId, userUid, null);
+    }
+  }, [roomId, userUid]);
 
-  // 11. Rematch Handlers
+  // 11. Draw Offer Handlers
+  const [isOfferingDraw, setIsOfferingDraw] = useState(false);
+  const [isRespondingToDraw, setIsRespondingToDraw] = useState(false);
+
+  const offerDraw = useCallback(async () => {
+    if (!roomId || !userUid || isOfferingDraw || isGameOver) return;
+    setIsOfferingDraw(true);
+    setMoveError(null);
+    try {
+      await apiOfferDraw(roomId, userUid);
+    } catch (err: any) {
+      setMoveError(mapGameError(err));
+    } finally {
+      setIsOfferingDraw(false);
+    }
+  }, [roomId, userUid, isOfferingDraw, isGameOver]);
+
+  const respondToDraw = useCallback(
+    async (accept: boolean) => {
+      if (!roomId || !userUid || isRespondingToDraw || isGameOver) return;
+      setIsRespondingToDraw(true);
+      setMoveError(null);
+      try {
+        await apiRespondToDrawOffer(roomId, userUid, accept);
+      } catch (err: any) {
+        setMoveError(mapGameError(err));
+      } finally {
+        setIsRespondingToDraw(false);
+      }
+    },
+    [roomId, userUid, isRespondingToDraw, isGameOver]
+  );
+
+  // 12. Rematch Handlers
   const requestRematch = useCallback(async () => {
     if (!roomId || !userUid) return;
     try {
@@ -569,6 +705,32 @@ export const useMultiplayerChess = ({
     respondToRematch,
     resign,
     claimVictory,
+    chessTimer,
+    isMyTimerExpired,
+    isOpponentTimerExpired,
+    isClaimingTimeout,
+    drawOffer: gameState?.drawOffer || null,
+    isDrawOfferPendingForMe: Boolean(
+      gameState?.drawOffer &&
+        gameState.drawOffer.status === 'PENDING' &&
+        gameState.drawOffer.offeredBy !== userUid &&
+        !isDrawOfferExpired(gameState.drawOffer.offeredAt)
+    ),
+    isDrawOfferSentByMe: Boolean(
+      gameState?.drawOffer &&
+        gameState.drawOffer.status === 'PENDING' &&
+        gameState.drawOffer.offeredBy === userUid &&
+        !isDrawOfferExpired(gameState.drawOffer.offeredAt)
+    ),
+    isDrawOfferDeclined: Boolean(gameState?.drawOffer?.status === 'DECLINED'),
+    isOpponentChoosingPromotion: Boolean(
+      gameState?.pendingPromotion &&
+        gameState.pendingPromotion.playerUid !== userUid
+    ),
+    offerDraw,
+    respondToDraw,
+    isOfferingDraw,
+    isRespondingToDraw,
     clearError: () => setMoveError(null),
   };
 };

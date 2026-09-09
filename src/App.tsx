@@ -12,6 +12,11 @@ import { WaitingRoomScreen } from './screens/WaitingRoomScreen';
 import { GamePreviewScreen } from './screens/GamePreviewScreen';
 import { ChessGameScreen } from './screens/ChessGameScreen';
 import { GameHistoryScreen } from './screens/GameHistoryScreen';
+import { TruthDareEntryScreen } from './screens/TruthDareEntryScreen';
+import { TruthDareRoomEntryScreen } from './screens/TruthDareRoomEntryScreen';
+import { TruthDareJoinRoomScreen } from './screens/TruthDareJoinRoomScreen';
+import { TruthDareLobbyScreen } from './screens/TruthDareLobbyScreen';
+import { TruthDareGameScreen } from './screens/TruthDareGameScreen';
 import { AuthPage } from './pages/AuthPage';
 import { ScreenTransition } from './components/UI';
 import { BottomNavigation } from './components/BottomNavigation';
@@ -19,21 +24,26 @@ import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ProfileProvider } from './context/ProfileContext';
 import { RoomProvider } from './context/RoomContext';
+import { TruthDareRoomProvider } from './context/TruthDareRoomContext';
 import { useAuth } from './hooks/useAuth';
 import { useProfile } from './hooks/useProfile';
 import { useRoom } from './hooks/useRoom';
+import { useTruthDareRoom } from './hooks/useTruthDareRoom';
 import { Loader2 } from 'lucide-react';
 
 function MainApp() {
   const { loading: authLoading, isAuthenticated } = useAuth();
   const { userProfile, loading: profileLoading, profileExists } = useProfile();
   const { currentRoom, isInRoom, leaveRoom } = useRoom();
+  const { currentRoom: currentTDRoom, leaveRoom: leaveTDRoom } = useTruthDareRoom();
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('SPLASH');
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'profile'>('home');
   const [activeRoom, setActiveRoom] = useState<GameRoom | null>(null);
   const [previousScreen, setPreviousScreen] = useState<Screen>('HOME');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  // Bumped to Date.now() on chess game exit so ProfileScreen & GameHistoryScreen re-fetch history
+  const [profileRefreshKey, setProfileRefreshKey] = useState<number>(0);
 
   // Route Protection & State Synchronization
   useEffect(() => {
@@ -51,6 +61,11 @@ function MainApp() {
       'GAME_PREVIEW',
       'CHESS_GAME',
       'GAME_HISTORY',
+      'TRUTH_DARE_ENTRY',
+      'TRUTH_DARE_ROOM_ENTRY',
+      'TRUTH_DARE_JOIN',
+      'TRUTH_DARE_LOBBY',
+      'TRUTH_DARE_GAME',
     ];
 
     // 1. Unauthenticated users cannot access protected screens or profile setup
@@ -113,6 +128,25 @@ function MainApp() {
     }
   }, [currentRoom?.status, currentRoom, isAuthenticated, profileExists, currentScreen]);
 
+  // Truth or Dare Active Room Lifecycle Synchronization
+  useEffect(() => {
+    if (!isAuthenticated || !profileExists || !currentTDRoom) return;
+
+    if (currentTDRoom.status === 'PLAYING') {
+      if (currentScreen !== 'TRUTH_DARE_GAME') {
+        setCurrentScreen('TRUTH_DARE_GAME');
+      }
+    } else if (currentTDRoom.status === 'WAITING' || currentTDRoom.status === 'READY') {
+      if (['TRUTH_DARE_ROOM_ENTRY', 'TRUTH_DARE_JOIN'].includes(currentScreen)) {
+        setCurrentScreen('TRUTH_DARE_LOBBY');
+      }
+    } else if (currentTDRoom.status === 'CLOSED') {
+      if (['TRUTH_DARE_LOBBY', 'TRUTH_DARE_GAME'].includes(currentScreen)) {
+        setCurrentScreen('HOME');
+      }
+    }
+  }, [currentTDRoom?.status, currentTDRoom, isAuthenticated, profileExists, currentScreen]);
+
   const handleSplashComplete = () => {
     if (isAuthenticated) {
       if (profileExists) {
@@ -120,6 +154,10 @@ function MainApp() {
           setCurrentScreen('WAITING_ROOM');
         } else if (currentRoom && currentRoom.status === 'PLAYING') {
           setCurrentScreen('CHESS_GAME');
+        } else if (currentTDRoom && (currentTDRoom.status === 'WAITING' || currentTDRoom.status === 'READY')) {
+          setCurrentScreen('TRUTH_DARE_LOBBY');
+        } else if (currentTDRoom && currentTDRoom.status === 'PLAYING') {
+          setCurrentScreen('TRUTH_DARE_GAME');
         } else {
           setCurrentScreen('HOME');
         }
@@ -191,6 +229,7 @@ function MainApp() {
 
   const handleLogout = () => {
     leaveRoom();
+    leaveTDRoom();
     setActiveRoom(null);
     setIsEditingProfile(false);
     setCurrentScreen('AUTH');
@@ -266,6 +305,7 @@ function MainApp() {
               setActiveTab('history');
               setCurrentScreen('GAME_HISTORY');
             }}
+            onPlayTruthDare={() => setCurrentScreen('TRUTH_DARE_ENTRY')}
           />
         )}
       </ScreenTransition>
@@ -282,6 +322,7 @@ function MainApp() {
               setActiveTab('home');
               setCurrentScreen('CREATE_ROOM');
             }}
+            refreshKey={profileRefreshKey}
           />
         )}
       </ScreenTransition>
@@ -308,6 +349,7 @@ function MainApp() {
               setActiveTab('home');
               setCurrentScreen('HOME');
             }}
+            refreshKey={profileRefreshKey}
           />
         )}
       </ScreenTransition>
@@ -374,8 +416,59 @@ function MainApp() {
             onExit={() => {
               leaveRoom();
               setActiveRoom(null);
+              setProfileRefreshKey(Date.now());
               setCurrentScreen('HOME');
             }}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'TRUTH_DARE_ENTRY'}>
+        {userProfile && (
+          <TruthDareEntryScreen
+            user={userProfile}
+            onBack={() => setCurrentScreen('HOME')}
+            onPlayWithPartner={() => setCurrentScreen('TRUTH_DARE_ROOM_ENTRY')}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'TRUTH_DARE_ROOM_ENTRY'}>
+        {userProfile && (
+          <TruthDareRoomEntryScreen
+            user={userProfile}
+            onBack={() => setCurrentScreen('TRUTH_DARE_ENTRY')}
+            onCreateSuccess={() => setCurrentScreen('TRUTH_DARE_LOBBY')}
+            onNavigateToJoin={() => setCurrentScreen('TRUTH_DARE_JOIN')}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'TRUTH_DARE_JOIN'}>
+        {userProfile && (
+          <TruthDareJoinRoomScreen
+            user={userProfile}
+            onBack={() => setCurrentScreen('TRUTH_DARE_ROOM_ENTRY')}
+            onJoinSuccess={() => setCurrentScreen('TRUTH_DARE_LOBBY')}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'TRUTH_DARE_LOBBY'}>
+        {userProfile && (
+          <TruthDareLobbyScreen
+            user={userProfile}
+            onBack={() => setCurrentScreen('TRUTH_DARE_ROOM_ENTRY')}
+            onBothReady={() => setCurrentScreen('TRUTH_DARE_GAME')}
+          />
+        )}
+      </ScreenTransition>
+
+      <ScreenTransition isActive={currentScreen === 'TRUTH_DARE_GAME'}>
+        {userProfile && (
+          <TruthDareGameScreen
+            user={userProfile}
+            onExit={() => setCurrentScreen('HOME')}
           />
         )}
       </ScreenTransition>
@@ -405,7 +498,9 @@ export default function App() {
       <AuthProvider>
         <ProfileProvider>
           <RoomProvider>
-            <MainApp />
+            <TruthDareRoomProvider>
+              <MainApp />
+            </TruthDareRoomProvider>
           </RoomProvider>
         </ProfileProvider>
       </AuthProvider>

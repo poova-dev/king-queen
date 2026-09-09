@@ -239,6 +239,34 @@ export const WaitingRoomScreen: React.FC<WaitingRoomScreenProps> = ({
           </div>
         </div>
 
+        {/* Battle Settings: Selected Time Control */}
+        <div className="w-full max-w-sm bg-[var(--surface)] border border-[var(--border)] rounded-2xl px-4 py-3 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/30 flex items-center justify-center text-sm text-[var(--primary)]">
+              ⏱
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold tracking-[0.2em] uppercase text-[var(--text-muted)]">
+                BATTLE SETTINGS • TIME CONTROL
+              </span>
+              <span className="text-xs font-bold text-[var(--text)] tracking-wider">
+                {currentRoom?.timeControl?.type === 'BULLET'
+                  ? '⚡ BULLET'
+                  : currentRoom?.timeControl?.type === 'BLITZ'
+                  ? '🔥 BLITZ'
+                  : currentRoom?.timeControl?.type === 'CLASSIC'
+                  ? '👑 CLASSIC'
+                  : '♟ RAPID'}
+              </span>
+            </div>
+          </div>
+          <div className="px-3 py-1 rounded-full bg-[var(--surface-light)] border border-[var(--border)] text-[10px] font-mono font-bold text-[var(--primary)]">
+            {currentRoom?.timeControl?.initialTime
+              ? `${currentRoom.timeControl.initialTime / 60000} MINUTES`
+              : currentRoom?.timer || '10 MINUTES'}
+          </div>
+        </div>
+
         {/* Players Head-to-Head Cards */}
         <div className="w-full max-w-sm flex items-center justify-between gap-2">
           <PlayerLobbyCard
@@ -417,49 +445,55 @@ export const WaitingRoomScreen: React.FC<WaitingRoomScreenProps> = ({
                 isFlipping={false}
               />
 
-              {/* Toss Winner Announcement */}
-              <div className="flex flex-col items-center gap-1">
-                {tossWinner?.uid === user.uid ? (
-                  <>
-                    <span className="text-base font-display font-bold text-[var(--primary)] tracking-widest uppercase flex items-center gap-1.5">
-                      <Crown className="w-4 h-4 text-[var(--primary)]" />
-                      YOU WON THE ROYAL TOSS!
-                    </span>
-                    <p className="text-xs text-[var(--text-muted)]">
-                      "You command the choice of battlefield."
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-sm font-display font-bold text-[var(--text)] tracking-wider uppercase">
-                      YOUR PARTNER WON THE TOSS
-                    </span>
-                    <p className="text-xs text-[var(--text-muted)]">
-                      "Waiting for their decision on the battlefield side..."
-                    </p>
-                  </>
-                )}
+              {/* Structured Toss Result Card */}
+              <div className="w-full rounded-2xl bg-[var(--surface)] border border-[var(--primary)]/40 p-4 flex flex-col items-center gap-3 shadow-lg">
+                <div className="flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase text-[var(--primary)]">
+                  <Sparkles className="w-3.5 h-3.5 text-[var(--primary)]" />
+                  <span>ROYAL TOSS RESULT</span>
+                </div>
+
+                <div className="w-full py-2 px-3 rounded-xl bg-[var(--surface-light)] border border-[var(--border)] flex items-center justify-between text-xs font-semibold">
+                  <span className="text-[var(--text-muted)]">TOSS LANDED ON:</span>
+                  <span className="text-[var(--primary)] font-bold tracking-wider font-display">
+                    {currentRoom.coinResult}
+                  </span>
+                </div>
+
+                {/* Winner Announcement */}
+                <div className="w-full py-2.5 px-3 rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/30 flex items-center justify-between text-xs">
+                  <span className="text-[var(--text-muted)] font-medium">TOSS WINNER:</span>
+                  <span className="font-bold text-[var(--text)] flex items-center gap-1.5 font-display">
+                    <Crown className="w-3.5 h-3.5 text-[var(--primary)]" />
+                    {tossWinner?.displayName}
+                    {tossWinner?.uid === user.uid ? ' (YOU)' : ''}
+                  </span>
+                </div>
               </div>
 
               {/* Winner Side Picker vs Opponent Waiting Banner */}
               {tossWinner?.uid === user.uid ? (
-                <div className="w-full flex flex-col gap-3 mt-2">
-                  <span className="text-xs font-bold tracking-widest uppercase text-[var(--text)]">
-                    CHOOSE YOUR SIDE
-                  </span>
+                <div className="w-full flex flex-col gap-3 mt-1">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-bold tracking-widest uppercase text-[var(--text)]">
+                      CHOOSE YOUR CHESS COLOR
+                    </span>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      Your choice determines who commands the battlefield first.
+                    </p>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => selectChessColor('WHITE')}
                       disabled={roomLoading}
-                      className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--primary)] hover:bg-[var(--surface-light)] transition-all flex flex-col items-center gap-2 group text-left"
+                      className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--primary)] hover:bg-[var(--surface-light)] transition-all flex flex-col items-center gap-2 group text-left shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
                     >
-                      <span className="text-3xl text-[#FFF8DC]">♔</span>
+                      <span className="text-3xl text-[#FFF8DC]">♙</span>
                       <div className="flex flex-col items-center text-center">
                         <span className="text-xs font-display font-bold tracking-wider text-[var(--text)]">
-                          WHITE
+                          ♙ WHITE
                         </span>
-                        <span className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                          Make the first move.
+                        <span className="text-[10px] text-amber-300/80 mt-0.5 font-medium">
+                          Moves First
                         </span>
                       </div>
                     </button>
@@ -467,24 +501,24 @@ export const WaitingRoomScreen: React.FC<WaitingRoomScreenProps> = ({
                     <button
                       onClick={() => selectChessColor('BLACK')}
                       disabled={roomLoading}
-                      className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--primary)] hover:bg-[var(--surface-light)] transition-all flex flex-col items-center gap-2 group text-left"
+                      className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--primary)] hover:bg-[var(--surface-light)] transition-all flex flex-col items-center gap-2 group text-left shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
                     >
-                      <span className="text-3xl text-[#8E8E93]">♚</span>
+                      <span className="text-3xl text-[#8E8E93]">♟</span>
                       <div className="flex flex-col items-center text-center">
                         <span className="text-xs font-display font-bold tracking-wider text-[var(--text)]">
-                          BLACK
+                          ♟ BLACK
                         </span>
-                        <span className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                          Play from the shadows.
+                        <span className="text-[10px] text-[var(--text-muted)] mt-0.5 font-medium">
+                          Plays Defender
                         </span>
                       </div>
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="w-full p-4 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center gap-2.5 text-xs text-[var(--text-muted)] mt-2">
+                <div className="w-full p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center gap-2.5 text-xs text-[var(--text-muted)] mt-1 shadow-md">
                   <Loader2 className="w-4 h-4 animate-spin text-[var(--primary)]" />
-                  <span>YOUR PARTNER IS CHOOSING THE SIDE...</span>
+                  <span>{tossWinner?.displayName || 'Partner'} is choosing their color...</span>
                 </div>
               )}
             </motion.div>
@@ -495,32 +529,52 @@ export const WaitingRoomScreen: React.FC<WaitingRoomScreenProps> = ({
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="w-full flex flex-col items-center gap-5 text-center mt-2"
+              className="w-full flex flex-col items-center gap-4 text-center mt-2"
             >
-              {/* Assigned Side Card */}
-              <div className="w-full p-4 rounded-2xl bg-[var(--surface)] border border-[var(--primary)]/40 flex items-center justify-between gap-3 shadow-md">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-[var(--surface-light)] border border-[var(--border)] flex items-center justify-center text-2xl">
-                    {myChessColor === 'WHITE' ? '♔' : '♚'}
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="text-[10px] uppercase font-bold tracking-widest text-[var(--text-muted)]">
-                      YOUR SIDE
-                    </span>
-                    <span className="text-sm font-bold text-[var(--primary)] tracking-wider">
-                      {myChessColor === 'WHITE' ? '♔ WHITE (FIRST MOVE)' : '♚ BLACK (DEFENDER)'}
-                    </span>
-                  </div>
+              {/* Color Assignment Overview Card */}
+              <div className="w-full rounded-2xl bg-[var(--surface)] border border-[var(--primary)]/40 p-4 flex flex-col gap-3 shadow-md">
+                <div className="flex items-center justify-between border-b border-[var(--border)]/60 pb-2">
+                  <span className="text-[10px] uppercase font-bold tracking-widest text-[var(--text-muted)]">
+                    BATTLEFIELD ASSIGNMENT
+                  </span>
+                  <span className="text-[9px] font-bold text-amber-300 uppercase px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30">
+                    WHITE MOVES FIRST
+                  </span>
                 </div>
-                <div className="px-3 py-1 rounded-full bg-[var(--primary)]/10 border border-[var(--primary)]/30 text-[10px] font-bold text-[var(--primary)] uppercase tracking-wider">
-                  ASSIGNED
+
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Your Assignment */}
+                  <div className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--primary)]/30 flex flex-col items-center gap-1">
+                    <span className="text-[9px] font-bold tracking-wider text-[var(--primary)] uppercase">
+                      YOU PLAY
+                    </span>
+                    <span className="text-sm font-bold text-[var(--text)] font-display flex items-center gap-1">
+                      {myChessColor === 'WHITE' ? '♙ WHITE' : '♟ BLACK'}
+                    </span>
+                    <span className="text-[9px] text-[var(--text-muted)]">
+                      {myChessColor === 'WHITE' ? 'First Move' : 'Second Move'}
+                    </span>
+                  </div>
+
+                  {/* Opponent Assignment */}
+                  <div className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--border)] flex flex-col items-center gap-1 opacity-80">
+                    <span className="text-[9px] font-bold tracking-wider text-[var(--text-muted)] uppercase">
+                      OPPONENT
+                    </span>
+                    <span className="text-sm font-bold text-[var(--text)] font-display flex items-center gap-1">
+                      {myChessColor === 'WHITE' ? '♟ BLACK' : '♙ WHITE'}
+                    </span>
+                    <span className="text-[9px] text-[var(--text-muted)]">
+                      {myChessColor === 'WHITE' ? 'Second Move' : 'First Move'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
               {/* Ready action button */}
               <div className="w-full flex flex-col gap-2">
                 {currentPlayer?.ready ? (
-                  <div className="w-full h-14 rounded-xl bg-green-500/15 border border-green-500/30 flex items-center justify-center gap-2 text-green-400 font-display font-bold tracking-widest text-sm">
+                  <div className="w-full h-14 rounded-2xl bg-green-500/15 border border-green-500/30 flex items-center justify-center gap-2 text-green-400 font-display font-bold tracking-widest text-sm shadow-md">
                     <Check className="w-5 h-5 text-green-400" />
                     YOU ARE READY ✓
                   </div>
@@ -528,16 +582,16 @@ export const WaitingRoomScreen: React.FC<WaitingRoomScreenProps> = ({
                   <Button
                     onClick={() => setReady()}
                     disabled={roomLoading}
-                    className="w-full h-14 font-semibold tracking-wider shadow-xl"
+                    className="w-full h-14 font-semibold tracking-wider shadow-xl rounded-2xl"
                   >
-                    I AM READY
+                    CONFIRM & ENTER BATTLEFIELD
                   </Button>
                 )}
 
                 <p className="text-[11px] text-[var(--text-muted)] mt-1">
                   {opponent?.ready
-                    ? 'Your opponent is confirmed and ready!'
-                    : 'Waiting for both monarchs to confirm readiness.'}
+                    ? 'Your opponent is ready! The match will start once both confirm.'
+                    : 'Waiting for both sovereigns to confirm readiness.'}
                 </p>
               </div>
             </motion.div>

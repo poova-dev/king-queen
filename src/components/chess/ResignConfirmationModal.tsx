@@ -69,13 +69,13 @@ export const ResignConfirmationModal: React.FC<ResignConfirmationModalProps> = (
         {/* Title & Description */}
         <div className="flex flex-col gap-1.5 px-2">
           <span className="text-[10px] font-bold tracking-[0.25em] text-red-400 uppercase flex items-center justify-center gap-1">
-            <ShieldAlert className="w-3 h-3" /> SURRENDER BATTLE
+            <ShieldAlert className="w-3 h-3" /> RESIGNATION
           </span>
           <h3 className="text-xl font-display text-[var(--text)] tracking-wider">
-            Leave the throne?
+            ABANDON THE BATTLE?
           </h3>
           <p className="text-xs text-[var(--text-muted)] leading-relaxed mt-0.5">
-            Resigning will surrender this battle to your opponent.
+            Are you sure you want to resign this match?
           </p>
         </div>
 
@@ -90,10 +90,10 @@ export const ResignConfirmationModal: React.FC<ResignConfirmationModalProps> = (
             {isProcessing ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>SURRENDERING...</span>
+                <span>RESIGNING...</span>
               </>
             ) : (
-              <span>YES, RESIGN</span>
+              <span>RESIGN GAME</span>
             )}
           </Button>
 
@@ -102,9 +102,9 @@ export const ResignConfirmationModal: React.FC<ResignConfirmationModalProps> = (
               if (!isProcessing) onClose();
             }}
             disabled={isProcessing}
-            className="w-full py-2.5 rounded-xl border border-[var(--border)] text-xs text-[var(--text)] hover:border-[var(--primary)]/50 transition-colors font-medium flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full py-2.5 rounded-xl border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--primary)]/50 transition-colors font-medium flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            CONTINUE PLAYING
+            CANCEL
           </button>
         </div>
       </motion.div>
