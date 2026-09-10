@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft,
@@ -25,6 +25,7 @@ import {
 } from '../types';
 import { useTruthDareRoom } from '../hooks/useTruthDareRoom';
 import { getCardById } from '../lib/truthDareCards';
+import { advanceTruthDareToChoosing } from '../services/truthDareRoomService';
 import { CategorySelector } from '../components/truthdare/CategorySelector';
 import { DifficultySelector } from '../components/truthdare/DifficultySelector';
 import { CustomDeckModal } from '../components/truthdare/CustomDeckModal';
@@ -61,8 +62,36 @@ export const TruthDareGameScreen: React.FC<TruthDareGameScreenProps> = ({
   const myPlayer = currentRoom?.players.find((p) => p.uid === user.uid);
   const partnerPlayer = currentRoom?.players.find((p) => p.uid !== user.uid);
 
-  const isMyTurn = session?.currentPlayerUid === user.uid;
-  const phase = session?.phase ?? 'INITIALIZING';
+  // Fallback: If currentPlayerUid is null, assign creator or first connected player
+  const activeChallengerUid =
+    session?.currentPlayerUid ||
+    currentRoom?.createdBy ||
+    currentRoom?.players[0]?.uid ||
+    user.uid;
+
+  const isMyTurn = activeChallengerUid === user.uid;
+
+  // Auto-advance timer: guarantees session does not get stuck in INITIALIZING
+  const [initFinished, setInitFinished] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setInitFinished(true);
+      if (currentRoom?.id && (session?.phase === 'INITIALIZING' || !session?.currentPlayerUid)) {
+        advanceTruthDareToChoosing(currentRoom.id).catch((err) => {
+          console.warn('[TruthDare] Auto-advance error:', err);
+        });
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [currentRoom?.id, session?.phase, session?.currentPlayerUid]);
+
+  const rawPhase = session?.phase ?? 'CHOOSING';
+  const phase =
+    rawPhase === 'INITIALIZING'
+      ? (initFinished ? 'CHOOSING' : 'INITIALIZING')
+      : rawPhase;
+
   const round = session?.round ?? 1;
 
   const card = getCardById(
@@ -77,7 +106,7 @@ export const TruthDareGameScreen: React.FC<TruthDareGameScreenProps> = ({
   };
 
   const handleDrawCard = async () => {
-    if (isSelecting || !isMyTurn || phase !== 'CHOOSING') return;
+    if (isSelecting || !isMyTurn || (phase !== 'CHOOSING' && phase !== 'INITIALIZING')) return;
     setIsSelecting(true);
     try {
       await selectTruthOrDare({
@@ -106,14 +135,86 @@ export const TruthDareGameScreen: React.FC<TruthDareGameScreenProps> = ({
     }
   };
 
-  // ─── PHASE: INITIALIZING ─────────────────────────────────────────────────
+  // ─── PHASE: INITIALIZING (BRIEF ROYAL INTRO WITH ESCAPE HATCH) ────────────
   if (phase === 'INITIALIZING') {
     return (
-      <div className="flex flex-col min-h-screen bg-[var(--background)] text-[var(--text)] select-none items-center justify-center gap-6 px-6">
-        <Loader2 className="w-10 h-10 text-rose-400 animate-spin" />
-        <p className="text-xs font-display tracking-widest text-rose-300 uppercase">
-          INITIALIZING SESSION...
-        </p>
+      <div className="flex flex-col min-h-screen bg-[var(--background)] text-[var(--text)] select-none">
+        <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-4 bg-[var(--background)]/80 backdrop-blur-md border-b border-[var(--border)]/40">
+          <button
+            onClick={() => setIsExitModalOpen(true)}
+            className="w-10 h-10 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+            aria-label="Exit chamber"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] font-bold tracking-[0.25em] text-rose-400 uppercase">
+              MULTIPLAYER
+            </span>
+            <h1 className="text-sm font-display tracking-widest uppercase text-[var(--text)]">
+              TRUTH OR DARE 😈
+            </h1>
+          </div>
+          <button
+            onClick={() => setIsExitModalOpen(true)}
+            className="w-10 h-10 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+            aria-label="Exit chamber"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 px-6">
+          <Loader2 className="w-10 h-10 text-rose-400 animate-spin" />
+          <div className="flex flex-col items-center gap-1.5 text-center">
+            <p className="text-xs font-display tracking-widest text-rose-300 uppercase font-bold">
+              INITIALIZING SESSION...
+            </p>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Entering the private chamber...
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setInitFinished(true);
+              if (currentRoom?.id) advanceTruthDareToChoosing(currentRoom.id).catch(() => {});
+            }}
+            className="text-[11px] text-[var(--primary)] font-semibold tracking-wider uppercase underline underline-offset-4 mt-1 hover:text-amber-300 transition-colors"
+          >
+            ENTER CHAMBER NOW →
+          </button>
+        </div>
+
+        {/* Exit confirmation modal */}
+        {isExitModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="w-full max-w-xs rounded-3xl bg-[var(--surface)] border border-rose-900/50 p-6 flex flex-col items-center text-center gap-4 shadow-2xl">
+              <div className="w-12 h-12 rounded-2xl bg-rose-950/60 border border-rose-600/40 flex items-center justify-center text-rose-400">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-display tracking-wider text-[var(--text)] uppercase">
+                LEAVE CHAMBER?
+              </h3>
+              <p className="text-xs text-[var(--text-muted)]">
+                You will exit this Truth or Dare match.
+              </p>
+              <div className="flex flex-col gap-2 w-full mt-2">
+                <button
+                  onClick={handleConfirmExit}
+                  className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs tracking-wider uppercase transition-colors"
+                >
+                  LEAVE MATCH
+                </button>
+                <button
+                  onClick={() => setIsExitModalOpen(false)}
+                  className="w-full py-2.5 rounded-xl border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] text-xs font-medium tracking-wide transition-colors"
+                >
+                  STAY
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

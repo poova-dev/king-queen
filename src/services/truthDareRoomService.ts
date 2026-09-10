@@ -401,10 +401,11 @@ export const setTruthDarePlayerReady = async (
 
       // Safe initialization: Only initialize if session is not already created
       if (!room.session) {
+        const creatorUid = room.createdBy || room.players[0]?.uid || null;
         const initialSession: TruthDareSession = {
           round: 1,
-          currentPlayerUid: null,
-          phase: 'INITIALIZING',
+          currentPlayerUid: creatorUid,
+          phase: 'CHOOSING',
           selectedMode: null,
           selectedCategory: null,
           selectedDifficulty: null,
@@ -457,14 +458,14 @@ export const startTruthDareGame = async (roomId: string, uid: string): Promise<v
       throw new Error('ROOM_NOT_READY');
     }
 
-    if (room.status === 'PLAYING') {
+    if (room.status === 'PLAYING' && room.session?.phase === 'CHOOSING') {
       return;
     }
 
     const initialSession: TruthDareSession = {
       round: 1,
       currentPlayerUid: room.createdBy,
-      phase: 'INITIALIZING',
+      phase: 'CHOOSING',
       selectedMode: null,
       selectedCategory: null,
       selectedDifficulty: null,
@@ -483,6 +484,44 @@ export const startTruthDareGame = async (roomId: string, uid: string): Promise<v
       updatedAt: serverTimestamp(),
     });
   });
+};
+
+/**
+ * Ensures an active Truth or Dare session transitions to CHOOSING phase.
+ * Fixes any sessions stuck in INITIALIZING or missing currentPlayerUid.
+ */
+export const advanceTruthDareToChoosing = async (roomId: string): Promise<void> => {
+  if (!roomId) return;
+  const roomRef = doc(db, 'truthDareRooms', roomId);
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const roomSnap = await transaction.get(roomRef);
+      if (!roomSnap.exists()) return;
+
+      const room = roomSnap.data() as TruthDareRoom;
+      if (!room.session) return;
+
+      if (room.session.phase === 'INITIALIZING' || !room.session.currentPlayerUid) {
+        const challenger =
+          room.session.currentPlayerUid ||
+          room.createdBy ||
+          room.players[0]?.uid ||
+          null;
+
+        transaction.update(roomRef, {
+          'session.phase': 'CHOOSING',
+          'session.currentPlayerUid': challenger,
+          status: 'PLAYING',
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+  } catch (err) {
+    if (import.meta.env?.DEV) {
+      console.warn('[TruthDare] advanceTruthDareToChoosing error:', err);
+    }
+  }
 };
 
 /**
