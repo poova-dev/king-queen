@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Sparkles, HelpCircle, Zap, Users, Shuffle, HeartHandshake, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Sparkles, HelpCircle, Zap, Users, Shuffle, HeartHandshake, ShieldAlert, Check } from 'lucide-react';
 import { Button } from '../components/UI';
 import { UserProfile } from '../types';
 
@@ -15,6 +15,8 @@ export const TruthDareEntryScreen: React.FC<TruthDareEntryScreenProps> = ({
   onBack,
   onPlayWithPartner,
 }) => {
+  const [selectedModePreview, setSelectedModePreview] = useState<'TRUTH' | 'DARE' | null>(null);
+
   return (
     <div className="flex flex-col min-h-screen bg-[var(--background)] text-[var(--text)] select-none">
       {/* HEADER */}
@@ -211,64 +213,163 @@ export const TruthDareEntryScreen: React.FC<TruthDareEntryScreenProps> = ({
 
         {/* GAME PREVIEW (TWO LARGE VISUAL CARDS) */}
         <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2 px-1">
+          <div className="flex items-center justify-between px-1">
             <span className="text-[10px] font-bold tracking-[0.2em] text-[var(--primary)] uppercase">
-              THE CHOICES
+              THE CHOICES • TAP TO SELECT
             </span>
+            {selectedModePreview && (
+              <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 uppercase">
+                <Check className="w-3 h-3" /> {selectedModePreview} ACTIVE
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* CARD ONE: TRUTH */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#181512] to-[var(--surface)] border border-[var(--primary)]/45 p-6 flex flex-col gap-4 shadow-[0_4px_20px_rgba(184,155,94,0.08)]">
+            <motion.div
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.98 }}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedModePreview(selectedModePreview === 'TRUTH' ? null : 'TRUTH')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelectedModePreview(selectedModePreview === 'TRUTH' ? null : 'TRUTH');
+                }
+              }}
+              className={`
+                relative overflow-hidden rounded-2xl p-6 flex flex-col gap-4 transition-all cursor-pointer select-none
+                ${
+                  selectedModePreview === 'TRUTH'
+                    ? 'bg-gradient-to-b from-[#241c14] to-[var(--surface)] border-2 border-[var(--primary)] shadow-[0_0_30px_rgba(184,155,94,0.3)]'
+                    : 'bg-gradient-to-b from-[#181512] to-[var(--surface)] border border-[var(--primary)]/45 hover:border-[var(--primary)]/80 shadow-[0_4px_20px_rgba(184,155,94,0.08)]'
+                }
+              `}
+            >
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-[var(--primary)]/15 border border-[var(--primary)]/30 flex items-center justify-center text-xl font-serif font-bold text-[var(--primary)] shadow-sm">
+                <div
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-serif font-bold transition-colors ${
+                    selectedModePreview === 'TRUTH'
+                      ? 'bg-[var(--primary)] text-black shadow-md'
+                      : 'bg-[var(--primary)]/15 border border-[var(--primary)]/30 text-[var(--primary)]'
+                  }`}
+                >
                   ?
                 </div>
-                <span className="text-[10px] font-mono tracking-widest text-[var(--primary)]/70 uppercase">
-                  HONESTY
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {selectedModePreview === 'TRUTH' && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[var(--primary)] text-black">
+                      CHOSEN
+                    </span>
+                  )}
+                  <span className="text-[10px] font-mono tracking-widest text-[var(--primary)]/70 uppercase">
+                    HONESTY
+                  </span>
+                </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <h3 className="text-xl font-serif tracking-[0.15em] text-[var(--primary)] uppercase">
-                  TRUTH
+                <h3 className="text-xl font-serif tracking-[0.15em] text-[var(--primary)] uppercase flex items-center gap-2">
+                  <span>TRUTH</span>
+                  {selectedModePreview === 'TRUTH' && (
+                    <Check className="w-4 h-4 text-[var(--primary)]" />
+                  )}
                 </h3>
                 <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                  Answer honestly. No secrets.
+                  Answer honestly. Reveal your hidden desires, sweetest memories, and raw thoughts.
                 </p>
               </div>
+
+              {selectedModePreview === 'TRUTH' && (
+                <div className="p-3 rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/30 text-xs text-[var(--primary)] flex flex-col gap-1 animate-in fade-in zoom-in-95">
+                  <span className="text-[9px] font-mono uppercase font-bold tracking-wider text-[var(--primary)]/80">
+                    Sample Royal Prompt:
+                  </span>
+                  <p className="italic text-[11px] leading-relaxed">
+                    &ldquo;What was the very first moment you felt a spark for your partner?&rdquo;
+                  </p>
+                </div>
+              )}
 
               <div className="pt-2 border-t border-[var(--border)]/40 flex items-center justify-between text-[10px] text-[var(--text-muted)] font-mono">
                 <span>STYLE: ROYAL GOLD</span>
-                <span>AUTHENTIC</span>
+                <span className="text-[var(--primary)] font-bold">TAP TO SELECT</span>
               </div>
-            </div>
+            </motion.div>
 
             {/* CARD TWO: DARE */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#1C0F14] to-[var(--surface)] border border-rose-900/60 p-6 flex flex-col gap-4 shadow-[0_4px_20px_rgba(225,29,72,0.08)]">
+            <motion.div
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.98 }}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedModePreview(selectedModePreview === 'DARE' ? null : 'DARE')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelectedModePreview(selectedModePreview === 'DARE' ? null : 'DARE');
+                }
+              }}
+              className={`
+                relative overflow-hidden rounded-2xl p-6 flex flex-col gap-4 transition-all cursor-pointer select-none
+                ${
+                  selectedModePreview === 'DARE'
+                    ? 'bg-gradient-to-b from-[#2a131c] to-[var(--surface)] border-2 border-rose-500 shadow-[0_0_30px_rgba(225,29,72,0.35)]'
+                    : 'bg-gradient-to-b from-[#1C0F14] to-[var(--surface)] border border-rose-900/60 hover:border-rose-500/70 shadow-[0_4px_20px_rgba(225,29,72,0.08)]'
+                }
+              `}
+            >
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-rose-950/60 border border-rose-600/40 flex items-center justify-center text-xl text-rose-400 shadow-sm">
-                  <Zap className="w-5 h-5 fill-rose-400/20 text-rose-400" />
+                <div
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl transition-colors ${
+                    selectedModePreview === 'DARE'
+                      ? 'bg-rose-500 text-white shadow-md'
+                      : 'bg-rose-950/60 border border-rose-600/40 text-rose-400'
+                  }`}
+                >
+                  <Zap className={`w-5 h-5 ${selectedModePreview === 'DARE' ? 'fill-white text-white' : 'fill-rose-400/20 text-rose-400'}`} />
                 </div>
-                <span className="text-[10px] font-mono tracking-widest text-rose-400/80 uppercase">
-                  COURAGE
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {selectedModePreview === 'DARE' && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500 text-white">
+                      CHOSEN
+                    </span>
+                  )}
+                  <span className="text-[10px] font-mono tracking-widest text-rose-400/80 uppercase">
+                    COURAGE
+                  </span>
+                </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <h3 className="text-xl font-serif tracking-[0.15em] text-rose-300 uppercase">
-                  DARE
+                <h3 className="text-xl font-serif tracking-[0.15em] text-rose-300 uppercase flex items-center gap-2">
+                  <span>DARE</span>
+                  {selectedModePreview === 'DARE' && (
+                    <Check className="w-4 h-4 text-rose-400" />
+                  )}
                 </h3>
                 <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                  Accept the challenge. Be brave.
+                  Accept the royal challenge. Step out of your comfort zone with thrilling intimacy.
                 </p>
               </div>
 
+              {selectedModePreview === 'DARE' && (
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 flex flex-col gap-1 animate-in fade-in zoom-in-95">
+                  <span className="text-[9px] font-mono uppercase font-bold tracking-wider text-rose-300">
+                    Sample Royal Prompt:
+                  </span>
+                  <p className="italic text-[11px] leading-relaxed">
+                    &ldquo;Whisper an undeniable royal compliment directly into your partner&apos;s ear.&rdquo;
+                  </p>
+                </div>
+              )}
+
               <div className="pt-2 border-t border-[var(--border)]/40 flex items-center justify-between text-[10px] text-[var(--text-muted)] font-mono">
                 <span>STYLE: DEEP CRIMSON</span>
-                <span>BOLD</span>
+                <span className="text-rose-400 font-bold">TAP TO SELECT</span>
               </div>
-            </div>
+            </motion.div>
           </div>
         </div>
       </main>
@@ -279,9 +380,15 @@ export const TruthDareEntryScreen: React.FC<TruthDareEntryScreenProps> = ({
           <Button
             variant="primary"
             onClick={onPlayWithPartner}
-            className="w-full h-14 font-display tracking-widest uppercase shadow-[0_0_30px_rgba(184,155,94,0.3)] hover:shadow-[0_0_40px_rgba(184,155,94,0.45)]"
+            className={`w-full h-14 font-display tracking-widest uppercase transition-all shadow-[0_0_30px_rgba(184,155,94,0.3)] hover:shadow-[0_0_40px_rgba(184,155,94,0.45)] ${
+              selectedModePreview === 'DARE'
+                ? 'bg-gradient-to-r from-rose-900 via-rose-700 to-rose-950 border border-rose-500/50 text-white shadow-[0_0_30px_rgba(225,29,72,0.4)] hover:shadow-[0_0_40px_rgba(225,29,72,0.6)]'
+                : ''
+            }`}
           >
-            PLAY WITH PARTNER
+            {selectedModePreview
+              ? `PLAY ${selectedModePreview} WITH PARTNER 👑`
+              : 'PLAY WITH PARTNER'}
           </Button>
         </div>
       </footer>

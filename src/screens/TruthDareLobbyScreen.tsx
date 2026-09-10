@@ -104,10 +104,20 @@ export const TruthDareLobbyScreen: React.FC<TruthDareLobbyScreenProps> = ({
     }
   };
 
+  const [isLeaving, setIsLeaving] = useState(false);
+
   const handleConfirmLeave = async () => {
+    if (isLeaving) return;
+    setIsLeaving(true);
     setIsLeaveModalOpen(false);
-    await leaveRoom();
-    onBack();
+    try {
+      await leaveRoom();
+    } catch (err) {
+      console.warn('[TruthDareLobby] Error leaving room:', err);
+    } finally {
+      setIsLeaving(false);
+      onBack();
+    }
   };
 
   const handleCreateRoom = async () => {

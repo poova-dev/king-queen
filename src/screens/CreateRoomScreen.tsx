@@ -146,44 +146,93 @@ export const CreateRoomScreen = ({ user, onBack, onCreated }: CreateRoomScreenPr
         </div>
 
         {/* Truth or Dare Toggle */}
-        <div className="flex flex-col gap-3">
-          <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-widest ml-1">
-            Post-Game Challenge
-          </label>
-          <Card
-            active={truthOrDare}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between ml-1">
+            <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-widest">
+              Post-Game Challenge
+            </label>
+            <span
+              className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full border transition-colors ${
+                truthOrDare
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                  : 'bg-[var(--surface-light)] border-[var(--border)] text-[var(--text-muted)]'
+              }`}
+            >
+              {truthOrDare ? 'ACTIVE' : 'OFF'}
+            </span>
+          </div>
+
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => setTruthOrDare(!truthOrDare)}
-            className="flex items-center justify-between py-4"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setTruthOrDare(!truthOrDare);
+              }
+            }}
+            className={`
+              p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between gap-4 select-none
+              ${
+                truthOrDare
+                  ? 'bg-[var(--surface)] border-[var(--accent)]/60 shadow-[0_0_15px_rgba(225,29,72,0.12)]'
+                  : 'bg-[var(--surface)]/50 border-[var(--border)] opacity-75 hover:opacity-100'
+              }
+            `}
           >
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
               <div
-                className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors flex-shrink-0 ${
                   truthOrDare
-                    ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
-                    : 'bg-[var(--surface-light)] text-[var(--text-muted)]'
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                    : 'bg-[var(--surface-light)] text-[var(--text-muted)] border border-[var(--border)]'
                 }`}
               >
-                <Heart className="w-5 h-5" />
+                <Heart className={`w-5 h-5 ${truthOrDare ? 'fill-rose-500/30' : ''}`} />
               </div>
-              <div>
-                <h3 className="font-medium text-sm">Truth or Dare</h3>
-                <p className="text-xs text-[var(--text-muted)]">
-                  Enable intimate post-match challenges.
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-sm text-[var(--text)]">Truth or Dare</h3>
+                  <span
+                    className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded ${
+                      truthOrDare
+                        ? 'bg-rose-950 text-rose-300'
+                        : 'bg-zinc-800 text-zinc-400'
+                    }`}
+                  >
+                    {truthOrDare ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                  {truthOrDare
+                    ? 'Intimate post-match challenges enabled after game.'
+                    : 'Turned off. Play pure classic chess only.'}
                 </p>
               </div>
             </div>
-            <div
-              className={`w-12 h-6 rounded-full p-1 transition-colors ${
-                truthOrDare ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'
+
+            {/* Interactive Switch Element */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={truthOrDare}
+              aria-label="Toggle Truth or Dare challenges"
+              onClick={(e) => {
+                e.stopPropagation();
+                setTruthOrDare(!truthOrDare);
+              }}
+              className={`w-13 h-7 rounded-full p-1 transition-colors flex-shrink-0 relative focus:outline-none focus:ring-2 focus:ring-rose-500/50 ${
+                truthOrDare ? 'bg-rose-600' : 'bg-zinc-700'
               }`}
             >
               <div
-                className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                className={`w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
                   truthOrDare ? 'translate-x-6' : 'translate-x-0'
                 }`}
               />
-            </div>
-          </Card>
+            </button>
+          </div>
         </div>
 
         {/* Time Control Selection */}

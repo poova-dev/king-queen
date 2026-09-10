@@ -147,14 +147,20 @@ export const TruthDareRoomProvider: React.FC<{ children: ReactNode }> = ({ child
     return false;
   }, [user, attachSubscription]);
 
+  const hasRestoredRef = useRef(false);
+
   useEffect(() => {
-    if (user && !currentRoom) {
-      restoreActiveRoom();
-    }
-    return () => {
+    if (user?.uid) {
+      if (!hasRestoredRef.current) {
+        hasRestoredRef.current = true;
+        restoreActiveRoom();
+      }
+    } else {
+      hasRestoredRef.current = false;
       cleanupSubscription();
-    };
-  }, [user, currentRoom, restoreActiveRoom, cleanupSubscription]);
+      setCurrentRoom(null);
+    }
+  }, [user?.uid, restoreActiveRoom, cleanupSubscription]);
 
   const createRoom = useCallback(async (): Promise<TruthDareRoom> => {
     if (!userProfile) {
@@ -205,6 +211,7 @@ export const TruthDareRoomProvider: React.FC<{ children: ReactNode }> = ({ child
 
     const roomIdToLeave = currentRoom.id;
     cleanupSubscription();
+    clearStoredTruthDareRoomId();
     setCurrentRoom(null);
 
     try {
@@ -244,6 +251,7 @@ export const TruthDareRoomProvider: React.FC<{ children: ReactNode }> = ({ child
     if (!currentRoom) return;
     const targetId = currentRoom.id;
     cleanupSubscription();
+    clearStoredTruthDareRoomId();
     setCurrentRoom(null);
 
     try {

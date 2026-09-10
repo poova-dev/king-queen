@@ -580,7 +580,12 @@ export const findActiveTruthDareRoomForUser = async (
 
     for (const d of snapshot.docs) {
       const room = d.data() as TruthDareRoom;
-      if (room.players?.some((p) => p.uid === uid)) {
+      if (
+        room.status !== 'CLOSED' &&
+        room.status !== 'FINISHED' &&
+        !room.exitedPlayers?.includes(uid) &&
+        room.players?.some((p) => p.uid === uid)
+      ) {
         return room;
       }
     }
